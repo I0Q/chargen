@@ -63,10 +63,11 @@ def _db_connect():
     return psycopg.connect(url)
 
 def _db_init():
-    try:
-        with _db_connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute('''
+    """Best-effort schema init."""
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
                 create table if not exists characters (
                   id uuid primary key,
                   created_at timestamptz not null,
@@ -80,10 +81,17 @@ def _db_init():
                   traits text not null,
                   image_url text not null
                 );
-                ''')
-            conn.commit()
+                """
+            )
+        conn.commit()
+
+
+def _db_ensure():
+    """Create tables if missing (handles first request after env changes)."""
+    try:
+        _db_init()
     except Exception:
-        # don't crash the whole app on cold start; requests will show a clear error
+        # still fail later with a clear error
         return
 
 
@@ -253,6 +261,7 @@ async def generate(request: Request):
     image_url = _upload_png_to_spaces(img)
     char_id = uuid.uuid4()
 
+    _db_ensure()
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -284,6 +293,7 @@ async def generate(request: Request):
 def history(request: Request):
     t = _token_for_links(request)
 
+    _db_ensure()
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
