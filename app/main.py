@@ -179,6 +179,13 @@ def index(request: Request):
     h2{{margin:0 0 6px; font-size:18px;}}
     .muted{{opacity:0.7; font-size:13px; margin-bottom:10px;}}
 
+    .top{{display:flex; gap:12px; align-items:flex-start; justify-content:center; max-width:520px; margin:0 auto;}}
+    .styleBox{{width:180px; margin-top:10px;}}
+    .radios{{display:flex; flex-direction:column; gap:8px;}}
+    .radio{{display:flex; align-items:center; gap:8px; font-size:14px; padding:8px 10px; border:1px solid rgba(0,0,0,0.12); border-radius:10px;}}
+    .radio input{{transform:scale(1.1);}}
+    @media (max-width: 420px) {{ .top{{flex-direction:column; align-items:center;}} .styleBox{{width:100%; max-width:280px;}} }}
+
     .preview{{position:relative; width:100%; max-width:280px; margin:10px auto 12px;}}
     .preview::before{{content:''; display:block; padding-top:100%;}} /* 1:1 */
     .preview img{{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#111;}}
@@ -186,7 +193,7 @@ def index(request: Request):
     .spinner{{width:28px; height:28px; border:3px solid rgba(255,255,255,0.35); border-top-color:#fff; border-radius:50%; animation:spin 0.9s linear infinite;}}
     @keyframes spin{{to{{transform:rotate(360deg);}}}}
 
-    .grid{{display:grid; grid-template-columns: 1fr 1fr; gap:10px;}}
+    .grid{{display:grid; grid-template-columns: 1fr 1fr; gap:10px; max-width:520px; margin:0 auto;}}
     @media (max-width: 420px) {{ .grid{{grid-template-columns:1fr;}} }}
 
     label{{display:block; font-size:12px; opacity:0.7; margin:0 0 6px;}}
@@ -195,7 +202,7 @@ def index(request: Request):
     textarea{{width:100%; min-height:84px; padding:12px; font-size:16px; margin-top:10px; box-sizing:border-box; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
     button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 
-    .actions{{max-width:360px; margin:0 auto;}}
+    .actions{{max-width:520px; margin:0 auto;}}
     #dl{{display:none; margin-top:10px; text-align:center;}}
     #dl a{{display:inline-block; padding:10px 12px; border:1px solid rgba(0,0,0,0.15); border-radius:10px; text-decoration:none;}}
   </style>
@@ -204,12 +211,29 @@ def index(request: Request):
   <h2>CharGen</h2>
   <div class="muted">Pick options + (optional) details. Tap Generate.</div>
 
-  <div class="preview">
-    <img id="previewImg" alt="preview" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'><rect width='300' height='300' fill='%23151515'/><circle cx='150' cy='115' r='54' fill='%23222222'/><rect x='70' y='175' width='160' height='95' rx='18' fill='%23222222'/><text x='150' y='288' font-size='13' fill='%23888888' text-anchor='middle' font-family='Arial, sans-serif'>Avatar preview</text></svg>" />
-    <div id="overlay" class="overlay">
-      <div class="spinner"></div>
-      <div>Generating…</div>
+  <div class="top">
+    <div class="preview">
+      <img id="previewImg" alt="preview" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'><rect width='300' height='300' fill='%23151515'/><circle cx='150' cy='115' r='54' fill='%23222222'/><rect x='70' y='175' width='160' height='95' rx='18' fill='%23222222'/><text x='150' y='288' font-size='13' fill='%23888888' text-anchor='middle' font-family='Arial, sans-serif'>Avatar preview</text></svg>" />
+      <div id="overlay" class="overlay">
+        <div class="spinner"></div>
+        <div>Generating…</div>
+      </div>
     </div>
+
+    <div class="styleBox">
+      <label>Style</label>
+      <div class="radios">
+        <label class="radio"><input type="radio" name="style" value="Illustrated fantasy" checked /> Illustrated</label>
+        <label class="radio"><input type="radio" name="style" value="Painterly" /> Painterly</label>
+        <label class="radio"><input type="radio" name="style" value="Comic / cel shaded" /> Comic</label>
+        <label class="radio"><input type="radio" name="style" value="Photoreal" /> Photoreal</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <label>Character name (optional)</label>
+    <input id="name" type="text" placeholder="Leave blank to auto-generate" />
   </div>
 
   <div class="grid">
@@ -249,16 +273,6 @@ def index(request: Request):
   </div>
 
   <div>
-    <label>Style</label>
-    <select id="style">
-      <option>Illustrated fantasy</option>
-      <option>Painterly</option>
-      <option>Comic / cel shaded</option>
-      <option>Photoreal</option>
-    </select>
-  </div>
-
-  <div>
     <label>Mood</label>
     <select id="mood">
       <option value="">(any)</option>
@@ -284,8 +298,6 @@ def index(request: Request):
 </div>
 
 <div class="actions">
-  <label>Character name (optional)</label>
-  <input id="name" type="text" placeholder="Leave blank to auto-generate" />
   <textarea id="traits" placeholder="Optional details: hair, eyes, skin, armor/robe, weapon, colors, scars, accessories…"></textarea>
   <div style="display:flex; gap:10px; margin-top:12px;">
     <button id="rand" type="button" style="margin-top:0;">Randomize</button>
@@ -310,7 +322,7 @@ function val(id) {{
 function buildTraits() {{
   const race = val('race');
   const clazz = val('clazz');
-  const style = val('style');
+  const style = (document.querySelector("input[name='style']:checked")?.value || '').trim();
   const mood = val('mood');
   const bg = val('bg');
   const extra = val('traits');
@@ -343,7 +355,9 @@ function pickRandom(selectId) {{
 btnRand.onclick = () => {{
   pickRandom('race');
   pickRandom('clazz');
-  pickRandom('style');
+  // randomize style radio
+  const styles = Array.from(document.querySelectorAll("input[name='style']"));
+  if (styles.length) styles[Math.floor(Math.random()*styles.length)].checked = true;
   pickRandom('mood');
   pickRandom('bg');
   // randomize name too
