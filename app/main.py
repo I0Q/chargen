@@ -171,20 +171,44 @@ def index(request: Request):
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CharGen</title>
   <style>
-    body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:18px;}}
-    label{{display:block; font-size:13px; opacity:0.7; margin:10px 0 6px;}}
+    body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
+    h2{{margin:0 0 6px; font-size:18px;}}
+    .muted{{opacity:0.7; font-size:13px; margin-bottom:10px;}}
+
+    .preview{{position:relative; width:100%; max-width:360px; margin:10px auto 12px;}}
+    .preview::before{{content:''; display:block; padding-top:133.333%;}} /* 3:4 */
+    .preview img{{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#111;}}
+    .overlay{{position:absolute; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column; gap:10px; border-radius:12px; background:rgba(0,0,0,0.35); color:#fff; font-size:14px;}}
+    .spinner{{width:28px; height:28px; border:3px solid rgba(255,255,255,0.35); border-top-color:#fff; border-radius:50%; animation:spin 0.9s linear infinite;}}
+    @keyframes spin{{to{{transform:rotate(360deg);}}}}
+
+    .grid{{display:grid; grid-template-columns: 1fr 1fr; gap:10px;}}
+    @media (max-width: 420px) {{ .grid{{grid-template-columns:1fr;}} }}
+
+    label{{display:block; font-size:12px; opacity:0.7; margin:0 0 6px;}}
     select{{width:100%; padding:10px; font-size:16px;}}
-    textarea{{width:100%; min-height:120px; padding:12px; font-size:16px; margin-top:10px;}}
+    textarea{{width:100%; min-height:84px; padding:12px; font-size:16px; margin-top:10px;}}
     button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
-    #out{{margin-top:16px;}}
-    img{{max-width:100%; border-radius:12px;}}
-    .muted{{opacity:0.7; font-size:13px;}}
+
+    .actions{{max-width:360px; margin:0 auto;}}
+    #dl{{display:none; margin-top:10px; text-align:center;}}
+    #dl a{{display:inline-block; padding:10px 12px; border:1px solid rgba(0,0,0,0.15); border-radius:10px; text-decoration:none;}}
   </style>
 </head>
 <body>
-  <h2>CharGen (D&D Avatar)</h2>
-  <div class="muted">Token-gated. No text/watermark. 3:4 portrait.</div>
-  <div class="row">
+  <h2>CharGen</h2>
+  <div class="muted">Pick options + (optional) details. Tap Generate.</div>
+
+  <div class="preview">
+    <img id="previewImg" alt="preview" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'><rect width='300' height='400' fill='%23151515'/><circle cx='150' cy='150' r='58' fill='%23222222'/><rect x='70' y='230' width='160' height='110' rx='18' fill='%23222222'/><text x='150' y='360' font-size='14' fill='%23888888' text-anchor='middle' font-family='Arial, sans-serif'>Your avatar will appear here</text></svg>" />
+    <div id="overlay" class="overlay">
+      <div class="spinner"></div>
+      <div>Generating…</div>
+    </div>
+  </div>
+
+  <div class="grid">
+  <div>
     <label>Race</label>
     <select id="race">
       <option value="">(any)</option>
@@ -200,7 +224,7 @@ def index(request: Request):
     </select>
   </div>
 
-  <div class="row">
+  <div>
     <label>Class</label>
     <select id="clazz">
       <option value="">(any)</option>
@@ -219,17 +243,17 @@ def index(request: Request):
     </select>
   </div>
 
-  <div class="row">
+  <div>
     <label>Style</label>
     <select id="style">
-      <option>Illustrated fantasy (default)</option>
+      <option>Illustrated fantasy</option>
       <option>Painterly</option>
       <option>Comic / cel shaded</option>
       <option>Photoreal</option>
     </select>
   </div>
 
-  <div class="row">
+  <div>
     <label>Mood</label>
     <select id="mood">
       <option value="">(any)</option>
@@ -241,7 +265,7 @@ def index(request: Request):
     </select>
   </div>
 
-  <div class="row">
+  <div>
     <label>Background</label>
     <select id="bg">
       <option>Simple / gradient</option>
@@ -252,16 +276,20 @@ def index(request: Request):
       <option>Battlefield haze</option>
     </select>
   </div>
+</div>
 
-  <textarea id="traits" placeholder="Optional details (one line): hair, eyes, skin, armor/robe, weapon, colors, scars, accessories…"></textarea>
-  <br/>
+<div class="actions">
+  <textarea id="traits" placeholder="Optional details: hair, eyes, skin, armor/robe, weapon, colors, scars, accessories…"></textarea>
   <button id="go">Generate</button>
-  <div id="out"></div>
+  <div id="dl"></div>
+</div>
 
 <script>
 const token = {json.dumps(t)};
-const out = document.getElementById('out');
 const btn = document.getElementById('go');
+const previewImg = document.getElementById('previewImg');
+const overlay = document.getElementById('overlay');
+const dl = document.getElementById('dl');
 
 function val(id) {{
   const el = document.getElementById(id);
@@ -286,9 +314,18 @@ function buildTraits() {{
   return parts.join(', ');
 }}
 
+let lastObjectUrl = null;
+
+function setGenerating(on) {{
+  overlay.style.display = on ? 'flex' : 'none';
+}}
+
 btn.onclick = async () => {{
-  out.innerHTML = '<div class="muted">Generating…</div>';
+  dl.style.display = 'none';
+  dl.innerHTML = '';
+  setGenerating(true);
   btn.disabled = true;
+
   try {{
     const traits = buildTraits();
     const resp = await fetch('/generate?t=' + encodeURIComponent(token), {{
@@ -302,10 +339,19 @@ btn.onclick = async () => {{
     }}
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
-    out.innerHTML = `<img src="${{url}}" />\n<div style="margin-top:10px"><a download="avatar.png" href="${{url}}">⬇ Download</a></div>`;
+    if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
+    lastObjectUrl = url;
+
+    // reveal image in-place
+    previewImg.src = url;
+
+    dl.style.display = 'block';
+    dl.innerHTML = `<a download="avatar.png" href="${{url}}">⬇ Download</a>`;
   }} catch (e) {{
-    out.innerHTML = '<pre style="white-space:pre-wrap;color:#b00">' + String(e) + '</pre>';
+    dl.style.display = 'block';
+    dl.innerHTML = '<pre style="white-space:pre-wrap;color:#b00; margin:10px 0 0">' + String(e) + '</pre>';
   }} finally {{
+    setGenerating(false);
     btn.disabled = false;
   }}
 }};
