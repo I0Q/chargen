@@ -56,6 +56,19 @@ Optional:
 - `GEMINI_IMAGE_MODEL` (default: `gemini-2.5-flash-image`)
 - `GEMINI_TEXT_MODEL` (default: `gemini-2.0-flash`)
 
+## Automated smoke test
+
+A lightweight end-to-end check you can run from your laptop:
+
+```bash
+python tools/smoke_test.py --base-url https://char.i0q.com --passphrase "<your passphrase>" --do-quote
+# or token mode:
+python tools/smoke_test.py --base-url https://char.i0q.com --token "<CHARGEN_TOKEN>" --do-quote
+
+# (optional, slower/expensive)
+python tools/smoke_test.py --base-url https://char.i0q.com --passphrase "<your passphrase>" --do-regenerate
+```
+
 ## Notes
 
 - Images are currently returned as PNG.
