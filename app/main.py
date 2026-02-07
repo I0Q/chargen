@@ -3,11 +3,12 @@ from __future__ import annotations
 import base64
 import json
 import os
+import urllib.error
 import urllib.request
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 app = FastAPI(title="CharGen", version="0.0.2")
 
@@ -42,11 +43,11 @@ async def token_gate(request: Request, call_next):
     expected = _get_token()
     if not expected:
         # Fail-closed if not configured.
-        raise HTTPException(status_code=503, detail="CHARGEN_TOKEN not configured")
+        return JSONResponse({"error": "CHARGEN_TOKEN not configured"}, status_code=503)
 
     token = _extract_token(request, request.headers.get("authorization"))
     if token != expected:
-        raise HTTPException(status_code=401, detail="unauthorized")
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
 
     return await call_next(request)
 
@@ -110,10 +111,22 @@ def _gemini_generate_image_b64(prompt: str) -> str:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
+        with urllib.request.urlopen(req, timeout=25) as resp:
             raw = resp.read()
+            status = resp.status
+    except urllib.error.HTTPError as e:  # type: ignore[attr-defined]
+        # Gemini often returns useful JSON error payloads.
+        try:
+            raw = e.read()
+            msg = raw.decode("utf-8", "ignore")
+        except Exception:
+            msg = str(e)
+        raise HTTPException(status_code=e.code, detail=msg)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"gemini request failed: {e}")
+
+    if status >= 400:
+        raise HTTPException(status_code=502, detail=f"gemini unexpected status {status}")
 
     data = json.loads(raw)
 
