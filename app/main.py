@@ -140,7 +140,7 @@ def _db_ensure():
         return
 
 
-app = FastAPI(title="CharGen", version="0.0.3")
+app = FastAPI(title="CharGen", version="0.0.4")
 
 # -------------------- auth (token + passphrase session) --------------------
 # Token (phone-friendly): CHARGEN_TOKEN via ?t=... or Authorization: Bearer ...
@@ -302,6 +302,19 @@ async def token_gate(request: Request, call_next):
 @app.get("/ping")
 def ping():
     return {"ok": True}
+
+
+@app.get("/api/whoami")
+def whoami(request: Request):
+    """Debug helper: tells which auth path was used (token vs passphrase cookie)."""
+    expected_token = _get_token() or ''
+    tok = _extract_token(request, request.headers.get('authorization'))
+    if tok and tok == expected_token:
+        return {"ok": True, "auth": "token"}
+    if PASSPHRASE_SHA256 and _is_session_authed(request):
+        return {"ok": True, "auth": "passphrase"}
+    # if middleware is bypassed somehow, still indicate
+    raise HTTPException(status_code=401, detail="unauthorized")
 
 
 @app.get("/login")
@@ -878,9 +891,27 @@ async function postJson(url, payload) {{
     body: JSON.stringify(payload),
   }});
   const txt = await resp.text();
-  if (!resp.ok) throw new Error(txt);
+  if (!resp.ok) throw new Error(`HTTP ${{resp.status}}: ${{txt}}`);
   try {{ return JSON.parse(txt); }} catch {{ return {{ok:true}}; }}
 }}
+
+// Make JS failures visible on mobile.
+window.addEventListener('error', (e) => {{
+  try {{ msg.textContent = 'JS error: ' + (e?.message || String(e)); }} catch {{}}
+}});
+window.addEventListener('unhandledrejection', (e) => {{
+  try {{ msg.textContent = 'Promise error: ' + String(e?.reason || e); }} catch {{}}
+}});
+
+(async () => {{
+  try {{
+    const r = await fetch(`/api/whoami?t=${{encodeURIComponent(token)}}`);
+    if (r.ok) {{
+      const j = await r.json();
+      if (j && j.auth) msg.textContent = `Authed via: ${{j.auth}}`;
+    }}
+  }} catch {{}}
+}})();
 
 btnGen.onclick = async () => {{
   btnGen.disabled = true;
