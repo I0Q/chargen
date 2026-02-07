@@ -505,7 +505,7 @@ def character_page(cid: str, request: Request):
 <style>
 body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
 .topbar{{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}}
-.wrap{{max-width:520px; margin:0 auto;}}
+.wrap{{max-width:520px; margin:0 auto; padding-bottom:92px;}}
 img{{width:100%; max-width:320px; aspect-ratio:1/1; object-fit:cover; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#111;}}
 label{{display:block; font-size:12px; opacity:0.7; margin:12px 0 6px;}}
 input, textarea{{width:100%; box-sizing:border-box; padding:12px; font-size:16px; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
@@ -513,6 +513,11 @@ textarea{{min-height:120px;}}
 button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 .muted{{opacity:0.7; font-size:13px;}}
 #msg{{margin-top:10px;}}
+
+/* Floating save bar */
+.savebar{{position:fixed; left:0; right:0; bottom:0; background:rgba(255,255,255,0.96); border-top:1px solid rgba(0,0,0,0.12); padding:10px 14px;}}
+.savebar .inner{{max-width:520px; margin:0 auto; display:flex; gap:10px; align-items:center;}}
+.savebar button{{margin-top:0;}}
 </style>
 </head>
 <body>
@@ -549,8 +554,13 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
     <label>Traits string (affects image generation)</label>
     <textarea id='traits'>{esc(traits)}</textarea>
 
-    <button id='save'>Save</button>
     <div id='msg' class='muted'></div>
+  </div>
+
+  <div class='savebar'>
+    <div class='inner'>
+      <button id='save' type='button' style='flex:1;'>Save</button>
+    </div>
   </div>
 
 <script>
@@ -918,7 +928,6 @@ def index(request: Request):
     <button id="rand" type="button" style="margin-top:0;">Randomize</button>
     <button id="go" type="button" style="margin-top:0;">Generate</button>
   </div>
-  <div id="dl"></div>
 </div>
 
 <script>
@@ -927,7 +936,6 @@ const btnRand = document.getElementById('rand');
 const btn = document.getElementById('go');
 const previewImg = document.getElementById('previewImg');
 const overlay = document.getElementById('overlay');
-const dl = document.getElementById('dl');
 
 function val(id) {{
   const el = document.getElementById(id);
@@ -998,8 +1006,6 @@ function safeFilename(s) {{
 }}
 
 btn.onclick = async () => {{
-  dl.style.display = 'none';
-  dl.innerHTML = '';
   setGenerating(true);
   btn.disabled = true;
 
@@ -1033,13 +1039,8 @@ btn.onclick = async () => {{
 
     // reveal image in-place
     previewImg.src = url;
-
-    const fname = safeFilename(name) + '.png';
-    dl.style.display = 'block';
-    dl.innerHTML = `<a download="${{fname}}" href="${{url}}">⬇ Download</a>`;
   }} catch (e) {{
-    dl.style.display = 'block';
-    dl.innerHTML = '<pre style="white-space:pre-wrap;color:#b00; margin:10px 0 0">' + String(e) + '</pre>';
+    alert('Error: ' + String(e));
   }} finally {{
     setGenerating(false);
     btn.disabled = false;
