@@ -1,0 +1,16 @@
+name: chargen
+region: nyc
+services:
+  - name: web
+    github:
+      repo: I0Q/chargen
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: CHARGEN_TOKEN
+        scope: RUN_TIME
+        type: SECRET
