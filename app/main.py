@@ -355,9 +355,7 @@ function pickRandom(selectId) {{
 btnRand.onclick = () => {{
   pickRandom('race');
   pickRandom('clazz');
-  // randomize style radio
-  const styles = Array.from(document.querySelectorAll("input[name='style']"));
-  if (styles.length) styles[Math.floor(Math.random()*styles.length)].checked = true;
+  // NOTE: do NOT randomize style (user must choose; default is Illustrated fantasy)
   pickRandom('mood');
   pickRandom('bg');
   // randomize name too
