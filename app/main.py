@@ -150,22 +150,28 @@ def ping():
 async def character_regenerate(cid: str, request: Request):
     body = await request.json()
     new_extra = (body.get("extra") or "").strip() or None
+    new_traits = (body.get("traits") or "").strip() or None
 
     _db_ensure()
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select race, class, mood, background, style, extra, image_url from characters where id=%s",
+                "select race, class, mood, background, style, extra, traits, image_url from characters where id=%s",
                 (cid,),
             )
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="not found")
-            race, clazz, mood, bg, style, old_extra, old_image_url = row
+            race, clazz, mood, bg, style, old_extra, old_traits, old_image_url = row
 
-    # Use same metadata; only extra changes (from UI). Fallback to stored extra if blank.
+    # Use same metadata; only extra changes (from UI). Traits drives regen (user-editable).
     extra = new_extra if new_extra is not None else old_extra
-    traits = _compose_traits(race, clazz, mood, bg, style, extra)
+    traits = new_traits if new_traits is not None else old_traits
+
+    # If user cleared traits, rebuild it from metadata+extra.
+    if not traits:
+        traits = _compose_traits(race, clazz, mood, bg, style, extra)
+
     prompt = _build_prompt(traits)
 
     b64 = _gemini_generate_image_b64(prompt)
@@ -540,7 +546,7 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 
     <button id='genquote' type='button' style='margin-top:10px;'>✨ Generate Quote</button>
 
-    <label>Traits string (advanced)</label>
+    <label>Traits string (affects image generation)</label>
     <textarea id='traits'>{esc(traits)}</textarea>
 
     <button id='save'>Save</button>
@@ -624,7 +630,10 @@ btnRegen.onclick = async () => {{
   btnRegen.disabled = true;
   msg.textContent = 'Regenerating image…';
   try {{
-    const payload = {{ extra: document.getElementById('extra').value }};
+    const payload = {{
+      extra: document.getElementById('extra').value,
+      traits: document.getElementById('traits').value,
+    }};
     const out = await postJson(`/api/character/${{cid}}/regenerate?t=${{encodeURIComponent(token)}}`, payload);
     if (out && out.image_url) {{
       previewImg.src = out.image_url;
