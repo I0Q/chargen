@@ -524,7 +524,8 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 /* Floating save bar */
 .savebar{{position:fixed; left:0; right:0; bottom:0; background:rgba(255,255,255,0.96); border-top:1px solid rgba(0,0,0,0.12); padding:10px 14px;}}
 .savebar .inner{{max-width:520px; margin:0 auto; display:flex; gap:10px; align-items:center;}}
-.savebar button{{margin-top:0;}}
+.savebar button{{margin-top:0; background:#0A60FF; color:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:12px;}}
+.savebar button:disabled{{opacity:0.7;}}
 </style>
 </head>
 <body>
@@ -692,7 +693,8 @@ btnSave.onclick = async () => {{
 
   try {{
     await postJson(`/api/character/${{cid}}?t=${{encodeURIComponent(token)}}`, payload);
-    msg.textContent = 'Saved.';
+    // redirect back to list
+    window.location.href = `/characters?t=${{encodeURIComponent(token)}}`;
   }} catch (e) {{
     msg.textContent = 'Error: ' + String(e);
   }} finally {{
@@ -860,6 +862,7 @@ def index(request: Request):
         <label class="radio"><input type="radio" name="style" value="Comic / cel shaded" /><span class="rtext">Comic</span></label>
         <label class="radio"><input type="radio" name="style" value="Photoreal" /><span class="rtext">Photoreal</span></label>
       </div>
+      <div class="muted" style="margin-top:8px;">Preview updates when you tap a style.</div>
     </div>
   </div>
 
@@ -943,6 +946,24 @@ const btnRand = document.getElementById('rand');
 const btn = document.getElementById('go');
 const previewImg = document.getElementById('previewImg');
 const overlay = document.getElementById('overlay');
+
+const PLACEHOLDERS = {
+  'Illustrated fantasy': `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23151515'/><stop offset='1' stop-color='%232b1b3a'/></linearGradient></defs><rect width='300' height='300' fill='url(%23g)'/><circle cx='150' cy='115' r='54' fill='%23222222'/><rect x='70' y='175' width='160' height='95' rx='18' fill='%23222222'/><text x='150' y='288' font-size='13' fill='%23c7b7ff' text-anchor='middle' font-family='Arial, sans-serif'>Illustrated</text></svg>`,
+  'Painterly': `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'><rect width='300' height='300' fill='%231d1a14'/><path d='M0 80 C60 20, 120 140, 180 80 S300 140, 300 80 V300 H0Z' fill='%234a2f1f' opacity='0.9'/><circle cx='150' cy='118' r='58' fill='%232a2a2a'/><text x='150' y='288' font-size='13' fill='%23ffd9a8' text-anchor='middle' font-family='Arial, sans-serif'>Painterly</text></svg>`,
+  'Comic / cel shaded': `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'><rect width='300' height='300' fill='%23141a22'/><rect x='22' y='22' width='256' height='256' rx='22' fill='none' stroke='%2359b0ff' stroke-width='6'/><circle cx='150' cy='120' r='54' fill='%23222222'/><rect x='70' y='178' width='160' height='92' rx='12' fill='%23222222'/><text x='150' y='288' font-size='13' fill='%2359b0ff' text-anchor='middle' font-family='Arial, sans-serif'>Comic</text></svg>`,
+  'Photoreal': `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'><defs><radialGradient id='r' cx='50%' cy='35%' r='70%'><stop offset='0' stop-color='%23333'/><stop offset='1' stop-color='%230b0b0b'/></radialGradient></defs><rect width='300' height='300' fill='url(%23r)'/><circle cx='150' cy='118' r='56' fill='%23222222'/><text x='150' y='288' font-size='13' fill='%23d0d0d0' text-anchor='middle' font-family='Arial, sans-serif'>Photoreal</text></svg>`
+};
+
+function setStylePreview() {{
+  const style = (document.querySelector("input[name='style']:checked")?.value || '').trim();
+  const src = PLACEHOLDERS[style];
+  if (src) previewImg.src = src;
+}}
+
+document.querySelectorAll("input[name='style']").forEach(r => r.addEventListener('change', setStylePreview));
+// set initial preview
+setStylePreview();
+
 
 function val(id) {{
   const el = document.getElementById(id);
