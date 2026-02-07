@@ -847,12 +847,12 @@ def index(request: Request):
     button.primary{{background:#0A60FF; color:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:12px;}}
     button.primary:disabled{{opacity:0.7;}}
 
-    /* full-screen progress */
-    #full{{position:fixed; inset:0; display:none; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:9999;}}
-    #full .box{{width:min(520px, 92vw); background:#fff; border-radius:14px; padding:18px; border:1px solid rgba(0,0,0,0.12);}}
-    #full .bar{{height:10px; background:#e9eefc; border-radius:999px; overflow:hidden;}}
-    #full .bar > div{{height:100%; width:0%; background:#0A60FF; border-radius:999px;}}
-    #full .label{{margin-top:10px; font-size:14px; opacity:0.75;}}
+    /* removed full-screen progress */
+    /* #full removed */
+    /* #full .box removed */
+    /* #full .bar removed */
+    /* #full .bar > div removed */
+    /* #full .label removed */
 
     .actions{{max-width:520px; margin:0 auto;}}
   </style>
@@ -955,21 +955,12 @@ def index(request: Request):
   </div>
 </div>
 
-<div id="full">
-  <div class="box">
-    <div class="bar"><div id="barFill"></div></div>
-    <div class="label">Generating…</div>
-  </div>
-</div>
-
 <script>
 const token = {json.dumps(t)};
 const btnRand = document.getElementById('rand');
 const btn = document.getElementById('go');
 const previewImg = document.getElementById('previewImg');
 const overlay = document.getElementById('overlay');
-const full = document.getElementById('full');
-const barFill = document.getElementById('barFill');
 
 function setStylePreview() {{
   const r = document.querySelector("input[name='style']:checked");
@@ -1059,20 +1050,8 @@ function safeFilename(s) {{
 }}
 
 async function doGenerate() {{
-  const t0 = Date.now();
   setGenerating(true);
   btn.disabled = true;
-
-  // full-screen 3s progress
-  if (full && barFill) {{
-    full.style.display = 'flex';
-    barFill.style.width = '0%';
-    // animate to 100% over ~3s
-    requestAnimationFrame(() => {{
-      barFill.style.transition = 'width 3s linear';
-      barFill.style.width = '100%';
-    }});
-  }}
 
   try {{
     const traits = buildTraits();
@@ -1098,16 +1077,10 @@ async function doGenerate() {{
       throw new Error(txt);
     }}
 
-    // we don't need to show the result here; it will be in Characters
+    // generation finalized server-side; redirect to Characters
     await resp.blob();
-
-    const elapsed = Date.now() - t0;
-    const remaining = Math.max(0, 3000 - elapsed);
-    setTimeout(() => {{
-      window.location.href = '/characters?t=' + encodeURIComponent(token);
-    }}, remaining);
+    window.location.href = '/characters?t=' + encodeURIComponent(token);
   }} catch (e) {{
-    if (full) full.style.display = 'none';
     alert('Error: ' + String(e));
   }} finally {{
     setGenerating(false);
