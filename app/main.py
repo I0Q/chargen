@@ -450,12 +450,16 @@ function downloadText(filename, text) {{
 
 document.getElementById('dldetails').onclick = () => {{
   const name = document.getElementById('name').value || 'Unnamed';
+  const quote = document.getElementById('quote').value || '';
   const details = document.getElementById('extra').value || '';
   const traits = document.getElementById('traits').value || '';
   const lines = [];
   lines.push(`Name: ${{name}}`);
   lines.push(`ID: ${{cid}}`);
   lines.push(`Image: ${{document.getElementById('dlimg').href}}`);
+  lines.push('');
+  lines.push('Quote:');
+  lines.push(quote);
   lines.push('');
   lines.push('Details:');
   lines.push(details);
