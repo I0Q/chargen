@@ -632,9 +632,9 @@ def index(request: Request):
     .top{{display:flex; gap:12px; align-items:flex-start; justify-content:center; max-width:520px; margin:0 auto;}}
     .styleBox{{width:200px; margin-top:10px;}}
     .radios{{display:flex; flex-direction:column; gap:8px;}}
-    .radio{{display:flex; align-items:center; justify-content:flex-start; gap:10px; font-size:14px; padding:8px 10px; border:1px solid rgba(0,0,0,0.12); border-radius:10px; opacity:1;}}
-    .radio input{{transform:scale(1.05); flex:0 0 auto;}}
-    .radio span{{flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#111; opacity:1;}}
+    .radio{{display:grid; grid-template-columns:26px 1fr; align-items:center; gap:10px; font-size:14px; padding:10px 10px; border:1px solid rgba(0,0,0,0.12); border-radius:10px; background:#fff; color:#111; opacity:1 !important;}}
+    .radio input{{transform:scale(1.05); margin:0;}}
+    .radio .rtext{{display:block; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#111; opacity:1;}}
     @media (max-width: 420px) {{ .top{{flex-direction:column; align-items:center;}} .styleBox{{width:100%; max-width:280px;}} }}
 
     .preview{{position:relative; width:100%; max-width:280px; margin:10px auto 12px;}}
@@ -674,10 +674,10 @@ def index(request: Request):
     <div class="styleBox">
       <label>Style</label>
       <div class="radios">
-        <label class="radio"><input type="radio" name="style" value="Illustrated fantasy" checked /><span>Illustrated</span></label>
-        <label class="radio"><input type="radio" name="style" value="Painterly" /><span>Painterly</span></label>
-        <label class="radio"><input type="radio" name="style" value="Comic / cel shaded" /><span>Comic</span></label>
-        <label class="radio"><input type="radio" name="style" value="Photoreal" /><span>Photoreal</span></label>
+        <label class="radio"><input type="radio" name="style" value="Illustrated fantasy" checked /><span class="rtext">Illustrated</span></label>
+        <label class="radio"><input type="radio" name="style" value="Painterly" /><span class="rtext">Painterly</span></label>
+        <label class="radio"><input type="radio" name="style" value="Comic / cel shaded" /><span class="rtext">Comic</span></label>
+        <label class="radio"><input type="radio" name="style" value="Photoreal" /><span class="rtext">Photoreal</span></label>
       </div>
     </div>
   </div>
