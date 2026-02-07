@@ -812,8 +812,13 @@ def index(request: Request):
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CharGen</title>
   <style>
-    body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
-    h2{{margin:0 0 6px; font-size:18px;}}
+    html, body{{height:100%;}}
+    body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:0;}}
+
+    .header{{display:flex; justify-content:space-between; align-items:center; padding:16px 14px; border-bottom:1px solid rgba(0,0,0,0.12);}}
+    .header .title{{font-size:20px; font-weight:700;}}
+    .main{{padding:14px;}}
+
     .muted{{opacity:0.7; font-size:13px; margin-bottom:10px;}}
 
     .top{{display:flex; gap:12px; align-items:flex-start; justify-content:center; max-width:520px; margin:0 auto;}}
@@ -839,10 +844,17 @@ def index(request: Request):
     input{{width:100%; padding:12px; font-size:16px; box-sizing:border-box; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
     textarea{{width:100%; min-height:84px; padding:12px; font-size:16px; margin-top:10px; box-sizing:border-box; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
     button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
+    button.primary{{background:#0A60FF; color:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:12px;}}
+    button.primary:disabled{{opacity:0.7;}}
+
+    /* full-screen progress */
+    #full{{position:fixed; inset:0; display:none; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:9999;}}
+    #full .box{{width:min(520px, 92vw); background:#fff; border-radius:14px; padding:18px; border:1px solid rgba(0,0,0,0.12);}}
+    #full .bar{{height:10px; background:#e9eefc; border-radius:999px; overflow:hidden;}}
+    #full .bar > div{{height:100%; width:0%; background:#0A60FF; border-radius:999px;}}
+    #full .label{{margin-top:10px; font-size:14px; opacity:0.75;}}
 
     .actions{{max-width:520px; margin:0 auto;}}
-    #dl{{display:none; margin-top:10px; text-align:center;}}
-    #dl a{{display:inline-block; padding:10px 12px; border:1px solid rgba(0,0,0,0.15); border-radius:10px; text-decoration:none;}}
   </style>
 </head>
 <body>
@@ -939,7 +951,14 @@ def index(request: Request):
   <textarea id="traits" placeholder="Optional details: hair, eyes, skin, armor/robe, weapon, colors, scars, accessories…"></textarea>
   <div style="display:flex; gap:10px; margin-top:12px;">
     <button id="rand" type="button" style="margin-top:0;">Randomize</button>
-    <button id="go" type="button" style="margin-top:0;">Generate</button>
+    <button id="go" class="primary" type="button" style="margin-top:0;">Generate</button>
+  </div>
+</div>
+
+<div id="full">
+  <div class="box">
+    <div class="bar"><div id="barFill"></div></div>
+    <div class="label">Generating…</div>
   </div>
 </div>
 
@@ -949,6 +968,8 @@ const btnRand = document.getElementById('rand');
 const btn = document.getElementById('go');
 const previewImg = document.getElementById('previewImg');
 const overlay = document.getElementById('overlay');
+const full = document.getElementById('full');
+const barFill = document.getElementById('barFill');
 
 function setStylePreview() {{
   const r = document.querySelector("input[name='style']:checked");
@@ -1038,8 +1059,20 @@ function safeFilename(s) {{
 }}
 
 async function doGenerate() {{
+  const t0 = Date.now();
   setGenerating(true);
   btn.disabled = true;
+
+  // full-screen 3s progress
+  if (full && barFill) {{
+    full.style.display = 'flex';
+    barFill.style.width = '0%';
+    // animate to 100% over ~3s
+    requestAnimationFrame(() => {{
+      barFill.style.transition = 'width 3s linear';
+      barFill.style.width = '100%';
+    }});
+  }}
 
   try {{
     const traits = buildTraits();
@@ -1064,14 +1097,17 @@ async function doGenerate() {{
       const txt = await resp.text();
       throw new Error(txt);
     }}
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
-    lastObjectUrl = url;
 
-    // reveal image in-place
-    previewImg.src = url;
+    // we don't need to show the result here; it will be in Characters
+    await resp.blob();
+
+    const elapsed = Date.now() - t0;
+    const remaining = Math.max(0, 3000 - elapsed);
+    setTimeout(() => {{
+      window.location.href = '/characters?t=' + encodeURIComponent(token);
+    }}, remaining);
   }} catch (e) {{
+    if (full) full.style.display = 'none';
     alert('Error: ' + String(e));
   }} finally {{
     setGenerating(false);
