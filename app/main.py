@@ -403,6 +403,11 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
       <img src='{esc(image_url)}' />
     </a>
 
+    <div style='display:flex; gap:10px; margin-top:10px;'>
+      <a id='dlimg' href='{esc(image_url)}' download style='flex:1; text-align:center; padding:10px 12px; border:1px solid rgba(0,0,0,0.15); border-radius:10px;'>⬇ Download image</a>
+      <button id='dldetails' type='button' style='flex:1; margin-top:0;'>⬇ Download details</button>
+    </div>
+
     <div class='muted' style='margin-top:8px;'>ID: {esc(str(cid))}</div>
 
     <label>Name</label>
@@ -422,6 +427,36 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 const token = {t!r};
 const cid = {str(cid)!r};
 const msg = document.getElementById('msg');
+
+function downloadText(filename, text) {{
+  const blob = new Blob([text], {{type:'text/plain'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}}
+
+document.getElementById('dldetails').onclick = () => {{
+  const name = document.getElementById('name').value || 'Unnamed';
+  const details = document.getElementById('extra').value || '';
+  const traits = document.getElementById('traits').value || '';
+  const lines = [];
+  lines.push(`Name: ${{name}}`);
+  lines.push(`ID: ${{cid}}`);
+  lines.push(`Image: ${{document.getElementById('dlimg').href}}`);
+  lines.push('');
+  lines.push('Details:');
+  lines.push(details);
+  lines.push('');
+  lines.push('Traits:');
+  lines.push(traits);
+  const fname = (name || 'character').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,40) || 'character';
+  downloadText(fname + '.txt', lines.join('\\n'));
+}};
 
 document.getElementById('save').onclick = async () => {{
   msg.textContent = 'Saving…';
