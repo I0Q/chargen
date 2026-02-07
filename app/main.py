@@ -470,7 +470,7 @@ def character_page(cid: str, request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select id, created_at, name, race, class, mood, background, style, extra, traits, image_url, quote from characters where id = %s",
+                "select id, created_at, name, race, class, mood, background, style, extra, traits, image_url from characters where id = %s",
                 (cid,),
             )
             row = cur.fetchone()
@@ -478,7 +478,7 @@ def character_page(cid: str, request: Request):
     if not row:
         raise HTTPException(status_code=404, detail="not found")
 
-    (cid, created_at, name, race, clazz, mood, bg, style, extra, traits, image_url, quote) = row
+    (cid, created_at, name, race, clazz, mood, bg, style, extra, traits, image_url) = row
 
     def esc(s: str | None) -> str:
         if not s:
@@ -538,8 +538,6 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
     <label>Details (notes)</label>
     <textarea id='extra'>{esc(extra)}</textarea>
 
-    <label>Quote</label>
-    <textarea id='quote' placeholder='Generate a quote…'>{esc(quote)}</textarea>
     <button id='genquote' type='button' style='margin-top:10px;'>✨ Generate Quote</button>
 
     <label>Traits string (advanced)</label>
@@ -572,16 +570,12 @@ function downloadText(filename, text) {{
 
 document.getElementById('dldetails').onclick = () => {{
   const name = document.getElementById('name').value || 'Unnamed';
-  const quote = document.getElementById('quote').value || '';
   const details = document.getElementById('extra').value || '';
   const traits = document.getElementById('traits').value || '';
   const lines = [];
   lines.push(`Name: ${{name}}`);
   lines.push(`ID: ${{cid}}`);
   lines.push(`Image: ${{document.getElementById('dlimg').href}}`);
-  lines.push('');
-  lines.push('Quote:');
-  lines.push(quote);
   lines.push('');
   lines.push('Details:');
   lines.push(details);
@@ -611,8 +605,14 @@ btnGen.onclick = async () => {{
   msg.textContent = 'Generating quote…';
   try {{
     const out = await postJson(`/api/character/${{cid}}/quote?t=${{encodeURIComponent(token)}}`, {{}});
-    if (out && out.quote) document.getElementById('quote').value = out.quote;
-    msg.textContent = 'Quote generated.';
+    if (out && out.quote) {{
+      const extra = document.getElementById('extra');
+      const q = out.quote;
+      const current = extra.value || '';
+      // Append to details as a new line.
+      extra.value = (current ? (current + '\\n\\n') : '') + 'Quote: ' + q;
+    }}
+    msg.textContent = 'Quote added to details.';
   }} catch (e) {{
     msg.textContent = 'Error: ' + String(e);
   }} finally {{
@@ -661,7 +661,6 @@ btnSave.onclick = async () => {{
   const payload = {{
     name: document.getElementById('name').value,
     extra: document.getElementById('extra').value,
-    quote: document.getElementById('quote').value,
     traits: document.getElementById('traits').value,
   }};
 
@@ -754,7 +753,6 @@ async def character_update(cid: str, request: Request):
     body = await request.json()
     name = (body.get("name") or "").strip() or None
     extra = (body.get("extra") or "").strip() or None
-    quote = (body.get("quote") or "").strip() or None
     traits = (body.get("traits") or "").strip() or None
 
     if not name:
@@ -764,8 +762,8 @@ async def character_update(cid: str, request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "update characters set name=%s, extra=%s, quote=%s, traits=%s where id=%s",
-                (name, extra, quote, traits, cid),
+                "update characters set name=%s, extra=%s, traits=%s where id=%s",
+                (name, extra, traits, cid),
             )
             if cur.rowcount != 1:
                 raise HTTPException(status_code=404, detail="not found")
