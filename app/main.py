@@ -395,6 +395,7 @@ async def character_regenerate(cid: str, request: Request):
     body = await request.json()
     new_extra = (body.get("extra") or "").strip() or None
     new_traits = (body.get("traits") or "").strip() or None
+    # style can be overridden by caller, but is optional (traits field is source of truth)
     new_style = (body.get("style") or "").strip() or None
 
     _db_ensure()
@@ -935,22 +936,12 @@ btnGen.onclick = async () => {{
 }};
 
 btnRegen.onclick = async () => {{
-  const styles = ['Illustrated fantasy','Flat vector','Comic / cel shaded','Photoreal'];
-  const choice = prompt('Choose style for regeneration:\\n' + styles.map((s,i)=>`${{i+1}}) ${{s}}`).join('\\n') + '\\n\\nEnter 1-4:');
-  if (!choice) return;
-  const idx = parseInt(String(choice).trim(), 10) - 1;
-  if (!(idx >= 0 && idx < styles.length)) {{
-    alert('Invalid choice');
-    return;
-  }}
-  const style = styles[idx];
-
   btnRegen.disabled = true;
   msg.textContent = 'Regenerating image…';
   if (imgOverlay) imgOverlay.style.display = 'flex';
   try {{
+    // Use whatever the user currently has in Traits (source of truth).
     const payload = {{
-      style,
       extra: document.getElementById('extra').value,
       traits: document.getElementById('traits').value,
     }};
