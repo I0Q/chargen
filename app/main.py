@@ -148,32 +148,38 @@ app = FastAPI(title="CharGen", version="0.0.3")
 
 PASSPHRASE_SHA256 = (os.environ.get('PASSPHRASE_SHA256') or '').strip().lower()
 SESSION_TTL_SEC = 24 * 60 * 60
-_sessions: dict[str, float] = {}  # sid -> created_at (unix seconds)
 
 
 def _get_token() -> str | None:
     return os.environ.get("CHARGEN_TOKEN")
 
 
-def _cleanup_sessions() -> None:
-    now = time.time()
-    dead = [sid for sid, t0 in _sessions.items() if (now - t0) > SESSION_TTL_SEC]
-    for sid in dead:
-        _sessions.pop(sid, None)
+def _sign_session(ts: int) -> str:
+    # Stateless session cookie: <ts>.<hmac>
+    key = PASSPHRASE_SHA256.encode('utf-8')
+    msg = str(ts).encode('utf-8')
+    sig = hmac.new(key, msg, hashlib.sha256).hexdigest()
+    return f"{ts}.{sig}"
 
 
 def _is_session_authed(request: Request) -> bool:
-    _cleanup_sessions()
-    sid = request.cookies.get('cg_sid')
-    if not sid:
+    v = request.cookies.get('cg_sid')
+    if not v:
         return False
-    t0 = _sessions.get(sid)
-    if not t0:
+    try:
+        ts_s, sig = v.split('.', 1)
+        ts = int(ts_s)
+    except Exception:
         return False
-    if (time.time() - t0) > SESSION_TTL_SEC:
-        _sessions.pop(sid, None)
+
+    now = int(time.time())
+    if ts > now + 60:
         return False
-    return True
+    if (now - ts) > SESSION_TTL_SEC:
+        return False
+
+    expected = _sign_session(ts).split('.', 1)[1]
+    return hmac.compare_digest(sig, expected)
 
 
 def _login_html(err: str = '') -> str:
@@ -345,8 +351,8 @@ async def login_post(request: Request):
         resp.headers['Cache-Control'] = 'no-store'
         return resp
 
-    sid = uuid.uuid4().hex
-    _sessions[sid] = time.time()
+    ts = int(time.time())
+    sid = _sign_session(ts)
 
     resp = RedirectResponse(url="/", status_code=302)
     resp.headers['Cache-Control'] = 'no-store'
@@ -364,9 +370,6 @@ async def login_post(request: Request):
 
 @app.get("/logout")
 def logout(request: Request):
-    sid = request.cookies.get('cg_sid')
-    if sid:
-        _sessions.pop(sid, None)
     resp = RedirectResponse(url="/login", status_code=302)
     resp.headers['Cache-Control'] = 'no-store'
     resp.delete_cookie('cg_sid', path='/')
