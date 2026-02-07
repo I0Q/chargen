@@ -146,6 +146,66 @@ def ping():
     return {"ok": True}
 
 
+@app.post("/api/character/{cid}/regenerate")
+async def character_regenerate(cid: str, request: Request):
+    body = await request.json()
+    new_extra = (body.get("extra") or "").strip() or None
+
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select race, class, mood, background, style, extra, image_url from characters where id=%s",
+                (cid,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="not found")
+            race, clazz, mood, bg, style, old_extra, old_image_url = row
+
+    # Use same metadata; only extra changes (from UI). Fallback to stored extra if blank.
+    extra = new_extra if new_extra is not None else old_extra
+    traits = _compose_traits(race, clazz, mood, bg, style, extra)
+    prompt = _build_prompt(traits)
+
+    b64 = _gemini_generate_image_b64(prompt)
+    img = base64.b64decode(b64)
+
+    image_url = _upload_png_to_spaces(img)
+
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "update characters set extra=%s, traits=%s, image_url=%s where id=%s",
+                (extra, traits, image_url, cid),
+            )
+            if cur.rowcount != 1:
+                raise HTTPException(status_code=404, detail="not found")
+        conn.commit()
+
+    # Best-effort cleanup of old image
+    _delete_spaces_object_if_ours(old_image_url)
+
+    return {"ok": True, "image_url": image_url}
+
+
+@app.post("/api/character/{cid}/delete")
+async def character_delete(cid: str, request: Request):
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("select image_url from characters where id=%s", (cid,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="not found")
+            (image_url,) = row
+            cur.execute("delete from characters where id=%s", (cid,))
+        conn.commit()
+
+    _delete_spaces_object_if_ours(image_url)
+    return {"ok": True}
+
+
 def _gemini_key() -> str | None:
     return os.environ.get("GEMINI_API_KEY")
 
@@ -163,6 +223,59 @@ def _build_prompt(traits: str) -> str:
         "No text, no watermark, no signature.\n\n"
         f"Character traits: {traits.strip()}\n"
     )
+
+
+def _compose_traits(
+    race: str | None,
+    clazz: str | None,
+    mood: str | None,
+    bg: str | None,
+    style: str | None,
+    extra: str | None,
+) -> str:
+    parts: list[str] = []
+    if race:
+        parts.append(race)
+    if clazz:
+        parts.append(clazz)
+    if mood:
+        parts.append(mood + " expression")
+    if bg:
+        parts.append(bg + " background")
+    if style:
+        parts.append("Style: " + style)
+    if extra:
+        parts.append(extra)
+    return ", ".join([p for p in parts if p])
+
+
+def _spaces_client(cfg: dict[str, str]):
+    import boto3
+    from botocore.client import Config
+
+    return boto3.client(
+        "s3",
+        region_name=cfg["SPACES_REGION"],
+        endpoint_url=f"https://{cfg['SPACES_ENDPOINT']}",
+        aws_access_key_id=cfg["SPACES_ACCESS_KEY"],
+        aws_secret_access_key=cfg["SPACES_SECRET_KEY"],
+        config=Config(signature_version="s3v4"),
+    )
+
+
+def _delete_spaces_object_if_ours(url: str | None):
+    cfg = _spaces_cfg()
+    if not cfg or not url:
+        return
+    base = _spaces_public_base(cfg).rstrip("/") + "/"
+    if not url.startswith(base):
+        return
+    key = url[len(base) :]
+    try:
+        client = _spaces_client(cfg)
+        client.delete_object(Bucket=cfg["SPACES_BUCKET"], Key=key)
+    except Exception:
+        return
 
 
 def _gemini_generate_image_b64(prompt: str) -> str:
@@ -412,6 +525,11 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
       <button id='dldetails' type='button' style='flex:1; margin-top:0;'>⬇ Download details</button>
     </div>
 
+    <div style='display:flex; gap:10px; margin-top:10px;'>
+      <button id='regen' type='button' style='flex:1; margin-top:0;'>🔁 Regenerate image</button>
+      <button id='del' type='button' style='flex:1; margin-top:0; border:1px solid rgba(180,0,0,0.35);'>🗑 Delete</button>
+    </div>
+
     <div class='muted' style='margin-top:8px;'>ID: {esc(str(cid))}</div>
 
     <label>Name</label>
@@ -435,6 +553,10 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 const token = {t!r};
 const cid = {str(cid)!r};
 const msg = document.getElementById('msg');
+const previewImg = document.querySelector('img');
+const dlimg = document.getElementById('dlimg');
+const btnRegen = document.getElementById('regen');
+const btnDel = document.getElementById('del');
 
 function downloadText(filename, text) {{
   const blob = new Blob([text], {{type:'text/plain'}});
@@ -495,6 +617,37 @@ btnGen.onclick = async () => {{
     msg.textContent = 'Error: ' + String(e);
   }} finally {{
     btnGen.disabled = false;
+  }}
+}};
+
+btnRegen.onclick = async () => {{
+  btnRegen.disabled = true;
+  msg.textContent = 'Regenerating image…';
+  try {{
+    const payload = {{ extra: document.getElementById('extra').value }};
+    const out = await postJson(`/api/character/${{cid}}/regenerate?t=${{encodeURIComponent(token)}}`, payload);
+    if (out && out.image_url) {{
+      previewImg.src = out.image_url;
+      dlimg.href = out.image_url;
+    }}
+    msg.textContent = 'Image regenerated.';
+  }} catch (e) {{
+    msg.textContent = 'Error: ' + String(e);
+  }} finally {{
+    btnRegen.disabled = false;
+  }}
+}};
+
+btnDel.onclick = async () => {{
+  if (!confirm('Delete this character?')) return;
+  btnDel.disabled = true;
+  msg.textContent = 'Deleting…';
+  try {{
+    await postJson(`/api/character/${{cid}}/delete?t=${{encodeURIComponent(token)}}`, {{}});
+    window.location.href = `/history?t=${{encodeURIComponent(token)}}`;
+  }} catch (e) {{
+    msg.textContent = 'Error: ' + String(e);
+    btnDel.disabled = false;
   }}
 }};
 
