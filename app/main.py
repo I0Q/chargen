@@ -70,7 +70,7 @@ def _build_prompt(traits: str) -> str:
     # Default: D&D illustrated portrait (not photoreal)
     return (
         "Create a Dungeons & Dragons style illustrated character avatar portrait. "
-        "Framed like a chat profile picture. Aspect ratio 3:4. High quality fantasy art. "
+        "Framed like a chat profile picture. Aspect ratio 1:1 (square). High quality fantasy art. "
         "No text, no watermark, no signature.\n\n"
         f"Character traits: {traits.strip()}\n"
     )
@@ -179,8 +179,8 @@ def index(request: Request):
     h2{{margin:0 0 6px; font-size:18px;}}
     .muted{{opacity:0.7; font-size:13px; margin-bottom:10px;}}
 
-    .preview{{position:relative; width:100%; max-width:360px; margin:10px auto 12px;}}
-    .preview::before{{content:''; display:block; padding-top:133.333%;}} /* 3:4 */
+    .preview{{position:relative; width:100%; max-width:280px; margin:10px auto 12px;}}
+    .preview::before{{content:''; display:block; padding-top:100%;}} /* 1:1 */
     .preview img{{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#111;}}
     .overlay{{position:absolute; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column; gap:10px; border-radius:12px; background:rgba(0,0,0,0.35); color:#fff; font-size:14px;}}
     .spinner{{width:28px; height:28px; border:3px solid rgba(255,255,255,0.35); border-top-color:#fff; border-radius:50%; animation:spin 0.9s linear infinite;}}
@@ -205,7 +205,7 @@ def index(request: Request):
   <div class="muted">Pick options + (optional) details. Tap Generate.</div>
 
   <div class="preview">
-    <img id="previewImg" alt="preview" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'><rect width='300' height='400' fill='%23151515'/><circle cx='150' cy='150' r='58' fill='%23222222'/><rect x='70' y='230' width='160' height='110' rx='18' fill='%23222222'/><text x='150' y='360' font-size='14' fill='%23888888' text-anchor='middle' font-family='Arial, sans-serif'>Your avatar will appear here</text></svg>" />
+    <img id="previewImg" alt="preview" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'><rect width='300' height='300' fill='%23151515'/><circle cx='150' cy='115' r='54' fill='%23222222'/><rect x='70' y='175' width='160' height='95' rx='18' fill='%23222222'/><text x='150' y='288' font-size='13' fill='%23888888' text-anchor='middle' font-family='Arial, sans-serif'>Avatar preview</text></svg>" />
     <div id="overlay" class="overlay">
       <div class="spinner"></div>
       <div>Generating…</div>
@@ -287,12 +287,16 @@ def index(request: Request):
   <label>Character name (optional)</label>
   <input id="name" type="text" placeholder="Leave blank to auto-generate" />
   <textarea id="traits" placeholder="Optional details: hair, eyes, skin, armor/robe, weapon, colors, scars, accessories…"></textarea>
-  <button id="go">Generate</button>
+  <div style="display:flex; gap:10px; margin-top:12px;">
+    <button id="rand" type="button" style="margin-top:0;">Randomize</button>
+    <button id="go" type="button" style="margin-top:0;">Generate</button>
+  </div>
   <div id="dl"></div>
 </div>
 
 <script>
 const token = {json.dumps(t)};
+const btnRand = document.getElementById('rand');
 const btn = document.getElementById('go');
 const previewImg = document.getElementById('previewImg');
 const overlay = document.getElementById('overlay');
@@ -326,6 +330,24 @@ let lastObjectUrl = null;
 function setGenerating(on) {{
   overlay.style.display = on ? 'flex' : 'none';
 }}
+
+function pickRandom(selectId) {{
+  const el = document.getElementById(selectId);
+  if (!el) return;
+  const n = el.options.length;
+  if (n <= 1) return;
+  // include (any) where present
+  el.selectedIndex = Math.floor(Math.random() * n);
+}}
+
+btnRand.onclick = () => {{
+  pickRandom('race');
+  pickRandom('clazz');
+  pickRandom('style');
+  pickRandom('mood');
+  pickRandom('bg');
+  // leave name + traits as-is
+}};
 
 function randFrom(arr) {{
   return arr[Math.floor(Math.random() * arr.length)];
