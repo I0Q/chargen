@@ -263,11 +263,6 @@ def _token_for_links(request: Request) -> str:
 
 @app.middleware("http")
 async def token_gate(request: Request, call_next):
-    # TEMP DEBUG BYPASS: if DISABLE_AUTH=1, allow all requests.
-    # (Do not leave enabled.)
-    if (os.environ.get("DISABLE_AUTH") or "").strip() == "1":
-        return await call_next(request)
-
 
     # Always allow health.
     if request.url.path in ("/ping", "/robots.txt"):
