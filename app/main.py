@@ -172,8 +172,10 @@ def index(request: Request):
   <title>CharGen</title>
   <style>
     body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:18px;}}
-    textarea{{width:100%; min-height:160px; padding:12px; font-size:16px;}}
-    button{{padding:12px 16px; font-size:16px; margin-top:10px;}}
+    label{{display:block; font-size:13px; opacity:0.7; margin:10px 0 6px;}}
+    select{{width:100%; padding:10px; font-size:16px;}}
+    textarea{{width:100%; min-height:120px; padding:12px; font-size:16px; margin-top:10px;}}
+    button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
     #out{{margin-top:16px;}}
     img{{max-width:100%; border-radius:12px;}}
     .muted{{opacity:0.7; font-size:13px;}}
@@ -182,7 +184,76 @@ def index(request: Request):
 <body>
   <h2>CharGen (D&D Avatar)</h2>
   <div class="muted">Token-gated. No text/watermark. 3:4 portrait.</div>
-  <textarea id="traits" placeholder="Ex: Female tiefling warlock, violet skin, gold eyes, short white hair, elegant robes, arcane book, candlelit library, confident smile"></textarea>
+  <div class="row">
+    <label>Race</label>
+    <select id="race">
+      <option value="">(any)</option>
+      <option>Human</option>
+      <option>Elf</option>
+      <option>Half-elf</option>
+      <option>Dwarf</option>
+      <option>Halfling</option>
+      <option>Tiefling</option>
+      <option>Dragonborn</option>
+      <option>Orc</option>
+      <option>Gnome</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>Class</label>
+    <select id="clazz">
+      <option value="">(any)</option>
+      <option>Fighter</option>
+      <option>Wizard</option>
+      <option>Rogue</option>
+      <option>Cleric</option>
+      <option>Paladin</option>
+      <option>Ranger</option>
+      <option>Warlock</option>
+      <option>Bard</option>
+      <option>Barbarian</option>
+      <option>Druid</option>
+      <option>Monk</option>
+      <option>Sorcerer</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>Style</label>
+    <select id="style">
+      <option>Illustrated fantasy (default)</option>
+      <option>Painterly</option>
+      <option>Comic / cel shaded</option>
+      <option>Photoreal</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>Mood</label>
+    <select id="mood">
+      <option value="">(any)</option>
+      <option>Calm</option>
+      <option>Confident</option>
+      <option>Friendly</option>
+      <option>Stoic</option>
+      <option>Menacing</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>Background</label>
+    <select id="bg">
+      <option>Simple / gradient</option>
+      <option>Tavern</option>
+      <option>Forest</option>
+      <option>Castle</option>
+      <option>Arcane library</option>
+      <option>Battlefield haze</option>
+    </select>
+  </div>
+
+  <textarea id="traits" placeholder="Optional details (one line): hair, eyes, skin, armor/robe, weapon, colors, scars, accessories…"></textarea>
   <br/>
   <button id="go">Generate</button>
   <div id="out"></div>
@@ -191,11 +262,35 @@ def index(request: Request):
 const token = {json.dumps(t)};
 const out = document.getElementById('out');
 const btn = document.getElementById('go');
+
+function val(id) {{
+  const el = document.getElementById(id);
+  return (el && el.value || '').trim();
+}}
+
+function buildTraits() {{
+  const race = val('race');
+  const clazz = val('clazz');
+  const style = val('style');
+  const mood = val('mood');
+  const bg = val('bg');
+  const extra = val('traits');
+
+  const parts = [];
+  if (race) parts.push(race);
+  if (clazz) parts.push(clazz);
+  if (mood) parts.push(mood + ' expression');
+  if (bg) parts.push(bg + ' background');
+  if (style) parts.push('Style: ' + style);
+  if (extra) parts.push(extra);
+  return parts.join(', ');
+}}
+
 btn.onclick = async () => {{
   out.innerHTML = '<div class="muted">Generating…</div>';
   btn.disabled = true;
   try {{
-    const traits = document.getElementById('traits').value;
+    const traits = buildTraits();
     const resp = await fetch('/generate?t=' + encodeURIComponent(token), {{
       method: 'POST',
       headers: {{'Content-Type':'application/json'}},
