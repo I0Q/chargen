@@ -941,7 +941,7 @@ btnGen.onclick = async () => {{
 
 btnRegen.onclick = async () => {{
   const styles = ['Illustrated fantasy','Flat vector','Comic / cel shaded','Photoreal'];
-  const choice = prompt('Choose style for regeneration:\n' + styles.map((s,i)=>`${{i+1}}) ${{s}}`).join('\n') + '\n\nEnter 1-4:');
+  const choice = prompt('Choose style for regeneration:\\n' + styles.map((s,i)=>`${{i+1}}) ${{s}}`).join('\\n') + '\\n\\nEnter 1-4:');
   if (!choice) return;
   const idx = parseInt(String(choice).trim(), 10) - 1;
   if (!(idx >= 0 && idx < styles.length)) {{
