@@ -79,6 +79,7 @@ def _db_init():
                   class text,
                   mood text,
                   background text,
+                  gender text,
                   style text,
                   extra text,
                   traits text not null,
@@ -88,6 +89,7 @@ def _db_init():
 
                 -- lightweight migration for older rows
                 alter table characters add column if not exists quote text;
+                alter table characters add column if not exists gender text;
                 """
             )
         conn.commit()
@@ -172,7 +174,7 @@ def _login_html(err: str = '') -> str:
     .card{{background:rgba(255,255,255,0.92);border:1px solid rgba(0,0,0,0.10);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}}
     label{{display:block;font-size:12px;opacity:0.75;margin:0 0 6px}}
     input{{width:100%;padding:12px;font-size:16px;box-sizing:border-box;border-radius:12px;border:1px solid rgba(0,0,0,0.15);background:#fff}}
-    button{{margin-top:12px;width:100%;padding:12px 16px;font-size:16px;border-radius:12px;border:1px solid rgba(0,0,0,0.12);background:#fff;font-weight:700}}
+    button{{margin-top:12px;width:100%;padding:12px 16px;font-size:16px;border-radius:12px;border:1px solid rgba(0,0,0,0.08);background:#0A60FF;color:#fff;font-weight:800}}
     .err{{margin-top:10px; color:#b00020; font-size:14px; font-weight:600}}
   </style>
 </head>
@@ -346,13 +348,13 @@ async def character_regenerate(cid: str, request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select race, class, mood, background, style, extra, traits, image_url from characters where id=%s",
+                "select race, class, mood, background, gender, style, extra, traits, image_url from characters where id=%s",
                 (cid,),
             )
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="not found")
-            race, clazz, mood, bg, style, old_extra, old_traits, old_image_url = row
+            race, clazz, mood, bg, gender, style, old_extra, old_traits, old_image_url = row
 
     # Allow style override from UI
     if new_style is not None:
@@ -364,7 +366,7 @@ async def character_regenerate(cid: str, request: Request):
 
     # If user cleared traits, rebuild it from metadata+extra.
     if not traits:
-        traits = _compose_traits(race, clazz, mood, bg, style, extra)
+        traits = _compose_traits(race, clazz, mood, bg, gender, style, extra)
 
     # Ensure selected style influences the generation. If caller didn't include a Style: tag,
     # append one so _build_prompt sees it.
@@ -436,6 +438,7 @@ def _compose_traits(
     clazz: str | None,
     mood: str | None,
     bg: str | None,
+    gender: str | None,
     style: str | None,
     extra: str | None,
 ) -> str:
@@ -448,6 +451,8 @@ def _compose_traits(
         parts.append(mood + " expression")
     if bg:
         parts.append(bg + " background")
+    if gender:
+        parts.append(gender)
     if style:
         parts.append("Style: " + style)
     if extra:
@@ -565,6 +570,7 @@ async def generate(request: Request):
     clazz = (body.get("clazz") or "").strip() or None
     mood = (body.get("mood") or "").strip() or None
     bg = (body.get("bg") or "").strip() or None
+    gender = (body.get("gender") or "").strip() or None
     style = (body.get("style") or "").strip() or None
     extra = (body.get("extra") or "").strip() or None
 
@@ -588,9 +594,9 @@ async def generate(request: Request):
             cur.execute(
                 """
                 insert into characters
-                  (id, created_at, name, race, class, mood, background, style, extra, traits, image_url)
+                  (id, created_at, name, race, class, mood, background, gender, style, extra, traits, image_url)
                 values
-                  (%s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                  (%s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     str(char_id),
@@ -599,6 +605,7 @@ async def generate(request: Request):
                     clazz,
                     mood,
                     bg,
+                    gender,
                     style,
                     extra,
                     traits,
@@ -625,13 +632,13 @@ def characters(request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select id, created_at, name, race, class, style, extra, traits, image_url from characters order by created_at desc limit 60"
+                "select id, created_at, name, race, class, gender, style, extra, traits, image_url from characters order by created_at desc limit 60"
             )
             rows = cur.fetchall()
 
     cards = []
-    for cid, created_at, name, race, clazz, style, extra, traits, image_url in rows:
-        meta = " • ".join([x for x in [race or "", clazz or "", style or ""] if x])
+    for cid, created_at, name, race, clazz, gender, style, extra, traits, image_url in rows:
+        meta = " • ".join([x for x in [race or "", clazz or "", gender or "", style or ""] if x])
         edit_url = f"/c/{cid}?t={t}"
         cards.append(
             "<div class='card'>"
@@ -1146,6 +1153,16 @@ def index(request: Request):
   </div>
 
   <div>
+    <label>Gender</label>
+    <select id="gender">
+      <option value="">(any)</option>
+      <option>Female</option>
+      <option>Male</option>
+      <option>Non-binary</option>
+    </select>
+  </div>
+
+  <div>
     <label>Background</label>
     <select id="bg">
       <option>Simple / gradient</option>
@@ -1198,6 +1215,7 @@ function buildTraits() {{
   const clazz = val('clazz');
   const style = (document.querySelector("input[name='style']:checked")?.value || '').trim();
   const mood = val('mood');
+  const gender = val('gender');
   const bg = val('bg');
   const extra = val('traits');
 
@@ -1205,6 +1223,7 @@ function buildTraits() {{
   if (race) parts.push(race);
   if (clazz) parts.push(clazz);
   if (mood) parts.push(mood + ' expression');
+  if (gender) parts.push(gender);
   if (bg) parts.push(bg + ' background');
   if (style) parts.push('Style: ' + style);
   if (extra) parts.push(extra);
@@ -1231,6 +1250,7 @@ function doRandomize() {{
   pickRandom('clazz');
   // NOTE: do NOT randomize style (user must choose; default is Illustrated fantasy)
   pickRandom('mood');
+  pickRandom('gender');
   pickRandom('bg');
   // randomize name too
   const traits = buildTraits();
@@ -1279,6 +1299,7 @@ async function doGenerate() {{
         clazz: val('clazz'),
         mood: val('mood'),
         bg: val('bg'),
+        gender: val('gender'),
         style: (document.querySelector("input[name='style']:checked")?.value || ''),
         extra: val('traits'),
       }})
