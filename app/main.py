@@ -282,7 +282,12 @@ async def token_gate(request: Request, call_next):
     if token == expected_token:
         return await call_next(request)
 
-    # Auth path B: passphrase session cookie (optional)
+    # For service/API usage (e.g. Tinybox), require token and do NOT accept
+    # passphrase cookie for /api/* endpoints.
+    if request.url.path.startswith('/api/'):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    # Auth path B: passphrase session cookie (web UI)
     if PASSPHRASE_SHA256 and _is_session_authed(request):
         return await call_next(request)
 
@@ -316,6 +321,150 @@ def whoami(request: Request):
         return {"ok": True, "auth": "passphrase"}
     # if middleware is bypassed somehow, still indicate
     raise HTTPException(status_code=401, detail="unauthorized")
+
+
+# -------------------- JSON service API (Tinybox-friendly) --------------------
+
+@app.get("/api/characters")
+def api_characters(request: Request, limit: int = 60):
+    limit = max(1, min(int(limit or 60), 200))
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select id, created_at, name, race, class, mood, background, gender, style, extra, traits, image_url, thumb_url "
+                "from characters order by created_at desc limit %s",
+                (limit,),
+            )
+            rows = cur.fetchall()
+
+    out = []
+    for (cid, created_at, name, race, clazz, mood, bg, gender, style, extra, traits, image_url, thumb_url) in rows:
+        out.append(
+            {
+                "id": str(cid),
+                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
+                "name": name,
+                "race": race,
+                "class": clazz,
+                "mood": mood,
+                "background": bg,
+                "gender": gender,
+                "style": style,
+                "extra": extra,
+                "traits": traits,
+                "image_url": image_url,
+                "thumb_url": thumb_url,
+            }
+        )
+
+    return {"ok": True, "characters": out}
+
+
+@app.get("/api/character/{cid}")
+def api_character_get(cid: str, request: Request):
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select id, created_at, name, race, class, mood, background, gender, style, extra, traits, image_url, thumb_url "
+                "from characters where id=%s",
+                (cid,),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+
+    (cid, created_at, name, race, clazz, mood, bg, gender, style, extra, traits, image_url, thumb_url) = row
+    return {
+        "ok": True,
+        "character": {
+            "id": str(cid),
+            "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
+            "name": name,
+            "race": race,
+            "class": clazz,
+            "mood": mood,
+            "background": bg,
+            "gender": gender,
+            "style": style,
+            "extra": extra,
+            "traits": traits,
+            "image_url": image_url,
+            "thumb_url": thumb_url,
+        },
+    }
+
+
+@app.post("/api/generate")
+async def api_generate(request: Request):
+    body = await request.json()
+
+    name = (body.get("name") or "").strip()
+    race = (body.get("race") or "").strip() or None
+    clazz = (body.get("clazz") or "").strip() or None
+    mood = (body.get("mood") or "").strip() or None
+    bg = (body.get("bg") or "").strip() or None
+    gender = (body.get("gender") or "").strip() or None
+    style = (body.get("style") or "").strip() or None
+    extra = (body.get("extra") or "").strip() or None
+
+    traits = (body.get("traits") or "").strip()
+    if not traits:
+        raise HTTPException(status_code=400, detail="missing traits")
+
+    prompt = _build_prompt(traits)
+    if name:
+        prompt = prompt + f"\nCharacter name (for vibe only; do not write text): {name}\n"
+
+    b64 = _gemini_generate_image_b64(prompt)
+    img = base64.b64decode(b64)
+    image_url, thumb_url = _upload_png_and_thumb_to_spaces(img)
+
+    char_id = uuid.uuid4()
+
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into characters (id, created_at, name, race, class, mood, background, gender, style, extra, traits, image_url, thumb_url) "
+                "values (%s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    str(char_id),
+                    name or "Unnamed",
+                    race,
+                    clazz,
+                    mood,
+                    bg,
+                    gender,
+                    style,
+                    extra,
+                    traits,
+                    image_url,
+                    thumb_url,
+                ),
+            )
+        conn.commit()
+
+    return {"ok": True, "id": str(char_id), "image_url": image_url, "thumb_url": thumb_url}
+
+
+@app.delete("/api/character/{cid}")
+def api_character_delete(cid: str, request: Request):
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("select image_url from characters where id=%s", (cid,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="not found")
+            (image_url,) = row
+            cur.execute("delete from characters where id=%s", (cid,))
+        conn.commit()
+
+    _delete_spaces_object_if_ours(image_url)
+    return {"ok": True}
 
 
 @app.get("/login")

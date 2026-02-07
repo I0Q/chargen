@@ -21,7 +21,8 @@ Two supported auth mechanisms:
 - Visit `/login` and enter the passphrase (server sets an HttpOnly secure cookie)
 
 Notes:
-- If both are configured, either one works.
+- Passphrase cookie auth is for the **web UI**.
+- `/api/*` service endpoints require the **token** (Tinybox-friendly).
 - API calls without auth return JSON 401; browser page loads redirect to `/login`.
 
 ## Storage
@@ -31,11 +32,21 @@ Notes:
 
 ## Endpoints
 
-- `GET /ping` health
-- `POST /generate` generate + persist (token required)
-- `GET /characters` list page (token required)
-- `GET /c/<id>` character details page (token required)
+Web UI:
+- `GET /` generator UI
+- `GET /characters` list page
+- `GET /c/<id>` character details page
+- `GET /login` / `POST /login` / `GET /logout` passphrase web flow
+
+Service JSON API (Tinybox-friendly):
+- `GET /api/characters?limit=60` list characters
+- `GET /api/character/<id>` fetch character
+- `POST /api/generate` generate + persist (JSON in/out)
 - `POST /api/character/<id>` update name/details/traits
+- `DELETE /api/character/<id>` delete character
+
+Other API (used by UI):
+- `POST /generate` generate + persist (returns PNG bytes)
 - `POST /api/character/<id>/regenerate` regenerate image (uses traits + details)
 - `POST /api/character/<id>/delete` delete character + best-effort delete image
 - `POST /api/character/<id>/quote` generate short quote (appends to details in UI)
