@@ -1108,7 +1108,15 @@ def index(request: Request):
 
     .header{{display:flex; justify-content:space-between; align-items:center; padding:16px 14px; border-bottom:1px solid rgba(0,0,0,0.12);}}
     .header .title{{font-size:20px; font-weight:700;}}
-    .main{{padding:14px;}}
+    .main{{padding:14px; padding-bottom:110px;}}
+
+    .nameRow{{display:flex; gap:10px; align-items:flex-end; justify-content:space-between; max-width:520px; margin:0 auto;}}
+    .nameRow .nameCol{{flex:1; min-width:0;}}
+    .nameRow button{{width:auto; margin-top:0; white-space:nowrap; padding:12px 14px; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#fff;}}
+
+    .genbar{{position:fixed; left:0; right:0; bottom:0; padding:10px 14px calc(10px + env(safe-area-inset-bottom)); background:rgba(255,255,255,0.96); border-top:1px solid rgba(0,0,0,0.12);}}
+    .genbar .inner{{max-width:520px; margin:0 auto;}}
+    .genbar button{{margin-top:0; width:100%;}}
 
     .muted{{opacity:0.7; font-size:13px; margin-bottom:10px;}}
 
@@ -1172,9 +1180,12 @@ def index(request: Request):
     </div>
   </div>
 
-  <div class="actions">
-    <label>Character name (optional)</label>
-    <input id="name" type="text" placeholder="Leave blank to auto-generate" />
+  <div class="nameRow">
+    <div class="nameCol">
+      <label>Character name (optional)</label>
+      <input id="name" type="text" placeholder="Leave blank to auto-generate" />
+    </div>
+    <button id="rand" type="button">Randomize</button>
   </div>
 
   <div class="grid">
@@ -1250,9 +1261,11 @@ def index(request: Request):
 
 <div class="actions">
   <textarea id="traits" placeholder="Optional details: hair, eyes, skin, armor/robe, weapon, colors, scars, accessories…"></textarea>
-  <div style="display:flex; gap:10px; margin-top:12px;">
-    <button id="rand" type="button" style="margin-top:0;">Randomize</button>
-    <button id="go" class="primary" type="button" style="margin-top:0;">Generate</button>
+</div>
+
+<div class="genbar">
+  <div class="inner">
+    <button id="go" class="primary" type="button">Generate</button>
   </div>
 </div>
 
