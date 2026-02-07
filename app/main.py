@@ -449,8 +449,12 @@ def characters(request: Request):
 <meta name='viewport' content='width=device-width, initial-scale=1' />
 <title>CharGen Characters</title>
 <style>
-body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
-.topbar{{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}}
+html, body{{height:100%;}}
+body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:0;}}
+.header{{display:flex; justify-content:space-between; align-items:center; padding:16px 14px; border-bottom:1px solid rgba(0,0,0,0.12);}}
+.header .title{{font-size:20px; font-weight:700;}}
+.header a{{text-decoration:none;}}
+.main{{padding:14px;}}
 .grid{{display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;}}
 @media (min-width: 520px){{ .grid{{grid-template-columns:repeat(3, 1fr);}} }}
 .card{{border:1px solid rgba(0,0,0,0.12); border-radius:12px; padding:8px;}}
@@ -461,13 +465,9 @@ a{{text-decoration:none; color:inherit;}}
 </style>
 </head>
 <body>
-  <div class='topbar'>
-    <div><b>Characters</b></div>
-    <div><a href='/?t={t}'>Generate a new character</a></div>
-  </div>
-  <div class='grid'>
+  <div class='header'><div class='title'>Characters</div><div><a href='/?t={t}'>Generate a new character</a></div></div><div class='main'><div class='grid'>
     {''.join(cards) if cards else '<div style="opacity:0.7">No renders yet.</div>'}
-  </div>
+  </div></div>
 </body></html>"""
 
     return HTMLResponse(html)
@@ -510,9 +510,11 @@ def character_page(cid: str, request: Request):
 <meta name='viewport' content='width=device-width, initial-scale=1' />
 <title>{esc(name) or 'Character'}</title>
 <style>
-body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
-.topbar{{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}}
-.wrap{{max-width:520px; margin:0 auto; padding-bottom:92px;}}
+html, body{{height:100%;}}
+body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:0; padding:0 0 120px 0;}}
+.topbar{{display:flex; justify-content:space-between; align-items:center; padding:16px 14px; border-bottom:1px solid rgba(0,0,0,0.12);}}
+.topbar b{{font-size:20px;}}
+.wrap{{max-width:520px; margin:0 auto; padding:14px;}}
 img{{display:block; width:100%; max-width:320px; margin:0 auto; aspect-ratio:1/1; object-fit:cover; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#111;}}
 label{{display:block; font-size:12px; opacity:0.7; margin:12px 0 6px;}}
 input, textarea{{width:100%; box-sizing:border-box; padding:12px; font-size:16px; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
@@ -529,11 +531,12 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 </style>
 </head>
 <body>
-  <div class='wrap'>
     <div class='topbar'>
       <div><b>{esc(name) or 'Character'}</b></div>
       <div><a href='/characters?t={t}'>Characters</a></div>
     </div>
+
+  <div class='wrap'>
 
     <a href='{esc(image_url)}' target='_blank' rel='noopener'>
       <img src='{esc(image_url)}' />
@@ -703,6 +706,7 @@ btnSave.onclick = async () => {{
   }}
 }};
 </script>
+</div>
 </body></html>"""
 
     return HTMLResponse(html)
@@ -842,8 +846,7 @@ def index(request: Request):
   </style>
 </head>
 <body>
-  <h2>CharGen</h2>
-  <div class="muted">Pick options + (optional) details. Tap Generate. <a href="/characters?t={t}">Characters</a></div>
+  <div class="header"><div class="title">CharGen</div><div><a href="/characters?t={t}">Characters</a></div></div><div class="main"><div class="muted">Pick options + (optional) details. Tap Generate.</div>
 
   <div class="top">
     <div class="preview">
@@ -1075,6 +1078,7 @@ btn.onclick = async () => {{
   }}
 }};
 </script>
+</div>
 </body>
 </html>"""
     return HTMLResponse(html)
