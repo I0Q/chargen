@@ -956,7 +956,11 @@ function setStylePreview() {{
   if (src) previewImg.src = src;
 }}
 
-document.querySelectorAll("input[name='style']").forEach(r => r.addEventListener('change', setStylePreview));
+document.querySelectorAll("input[name='style']").forEach(r => {{
+  r.addEventListener('change', setStylePreview);
+  r.addEventListener('click', setStylePreview);
+  r.addEventListener('touchend', setStylePreview);
+}});
 setStylePreview();
 
 
@@ -999,7 +1003,7 @@ function pickRandom(selectId) {{
   el.selectedIndex = Math.floor(Math.random() * n);
 }}
 
-btnRand.onclick = () => {{
+function doRandomize() {{
   pickRandom('race');
   pickRandom('clazz');
   // NOTE: do NOT randomize style (user must choose; default is Illustrated fantasy)
@@ -1007,8 +1011,12 @@ btnRand.onclick = () => {{
   pickRandom('bg');
   // randomize name too
   const traits = buildTraits();
-  document.getElementById('name').value = autoName(traits);
-}};
+  const nameEl = document.getElementById('name');
+  if (nameEl) nameEl.value = autoName(traits);
+}}
+
+btnRand.onclick = doRandomize;
+btnRand.addEventListener('touchend', (e) => {{ e.preventDefault(); doRandomize(); }});
 
 function randFrom(arr) {{
   return arr[Math.floor(Math.random() * arr.length)];
@@ -1029,7 +1037,7 @@ function safeFilename(s) {{
   return (s || 'avatar').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,40) || 'avatar';
 }}
 
-btn.onclick = async () => {{
+async function doGenerate() {{
   setGenerating(true);
   btn.disabled = true;
 
@@ -1069,7 +1077,11 @@ btn.onclick = async () => {{
     setGenerating(false);
     btn.disabled = false;
   }}
-}};
+}}
+
+btn.onclick = () => {{ doGenerate(); }};
+btn.addEventListener('touchend', (e) => {{ e.preventDefault(); doGenerate(); }});
+
 </script>
 </div>
 </body>
