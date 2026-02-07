@@ -139,10 +139,11 @@ def _is_session_authed(request: Request) -> bool:
 
 
 def _login_html(err: str = '') -> str:
+    # RNG-style login UI (topbar + centered card)
     err_html = ''
     if err:
         esc = (err.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;'))
-        err_html = f'<div style="margin-top:10px; color:#b00020; font-size:14px;">{esc}</div>'
+        err_html = f'<div class="err">{esc}</div>'
 
     return f"""<!doctype html>
 <html lang=\"en\">
@@ -151,28 +152,45 @@ def _login_html(err: str = '') -> str:
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>CharGen — Login</title>
   <style>
-    body{{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:#fff;}}
-    .header{{padding:16px 14px; border-bottom:1px solid rgba(0,0,0,0.12); font-size:20px; font-weight:700;}}
-    .main{{padding:14px; max-width:520px; margin:0 auto;}}
-    .card{{border:1px solid rgba(0,0,0,0.12); border-radius:14px; padding:16px;}}
-    label{{display:block; font-size:12px; opacity:0.75; margin:0 0 6px;}}
-    input{{width:100%; padding:12px; font-size:16px; box-sizing:border-box; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
-    button{{margin-top:12px; width:100%; padding:12px 16px; font-size:16px; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#fff;}}
+    :root{{--pad:40px;--maxw:860px;--topbar-h:56px;--radius:18px;--shadow:0 16px 50px rgba(0,0,0,0.10)}}
+    @media (max-width:420px){{:root{{--pad:20px;--topbar-h:52px}}}}
+    *{{box-sizing:border-box}}
+    body{{margin:0;color:#111;font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background:
+      radial-gradient(900px 280px at 20% 0%, rgba(106,90,205,0.12), transparent 60%),
+      radial-gradient(900px 280px at 80% 20%, rgba(0,188,212,0.10), transparent 60%),
+      #ffffff;
+    }}
+    .topbar{{position:fixed;top:0;left:0;right:0;height:var(--topbar-h);display:flex;align-items:center;z-index:1000;
+      background:rgba(255,255,255,0.88);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,0.06);
+    }}
+    .topbarInner{{max-width:var(--maxw);width:100%;margin:0 auto;padding:0 var(--pad);display:flex;align-items:center;justify-content:space-between;gap:12px}}
+    .brand{{font-weight:700;letter-spacing:0.2px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+    @media (max-width:420px){{.brand{{font-size:15px}}}}
+    main{{padding-top:calc(var(--topbar-h) + 18px);padding-left:var(--pad);padding-right:var(--pad);padding-bottom:40px}}
+    .pageCenter{{max-width:720px;margin:0 auto}}
+    .h1{{font-size:20px;font-weight:800; letter-spacing:0.1px; margin:0 0 12px}}
+    .card{{background:rgba(255,255,255,0.92);border:1px solid rgba(0,0,0,0.10);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}}
+    label{{display:block;font-size:12px;opacity:0.75;margin:0 0 6px}}
+    input{{width:100%;padding:12px;font-size:16px;box-sizing:border-box;border-radius:12px;border:1px solid rgba(0,0,0,0.15);background:#fff}}
+    button{{margin-top:12px;width:100%;padding:12px 16px;font-size:16px;border-radius:12px;border:1px solid rgba(0,0,0,0.12);background:#fff;font-weight:700}}
+    .err{{margin-top:10px; color:#b00020; font-size:14px; font-weight:600}}
   </style>
 </head>
 <body>
-  <div class=\"header\">CharGen</div>
-  <div class=\"main\">
-    <div style=\"opacity:0.75; margin-bottom:10px;\">Enter passphrase</div>
-    <div class=\"card\">
-      <form method=\"post\" action=\"/login\">
-        <label for=\"pass\">Passphrase</label>
-        <input id=\"pass\" name=\"passphrase\" type=\"password\" required autofocus />
-        <button type=\"submit\">Unlock</button>
-        {err_html}
-      </form>
+  <div class=\"topbar\"><div class=\"topbarInner\"><div class=\"brand\">CharGen</div><div style=\"width:80px\"></div></div></div>
+  <main>
+    <div class=\"pageCenter\">
+      <div class=\"h1\">Enter passphrase</div>
+      <div class=\"card\">
+        <form method=\"post\" action=\"/login\">
+          <label for=\"pass\">Passphrase</label>
+          <input id=\"pass\" name=\"passphrase\" type=\"password\" placeholder=\"Passphrase\" autofocus required />
+          <button type=\"submit\">Unlock</button>
+          {err_html}
+        </form>
+      </div>
     </div>
-  </div>
+  </main>
 </body>
 </html>"""
 
