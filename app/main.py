@@ -346,7 +346,9 @@ btnRand.onclick = () => {{
   pickRandom('style');
   pickRandom('mood');
   pickRandom('bg');
-  // leave name + traits as-is
+  // randomize name too
+  const traits = buildTraits();
+  document.getElementById('name').value = autoName(traits);
 }};
 
 function randFrom(arr) {{
