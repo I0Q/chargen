@@ -225,7 +225,15 @@ async def token_gate(request: Request, call_next):
 
     # Not authorized
     if _wants_html(request):
-        return RedirectResponse(url="/login", status_code=302)
+        if PASSPHRASE_SHA256 and len(PASSPHRASE_SHA256) == 64:
+            return RedirectResponse(url="/login", status_code=302)
+        return HTMLResponse(
+            "<html><body style='font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:16px'>"
+            "<h2 style='margin:0 0 8px'>Unauthorized</h2>"
+            "<div style='opacity:0.75'>This app requires a token link (?t=...) or passphrase auth to be enabled on the server.</div>"
+            "</body></html>",
+            status_code=401,
+        )
     return JSONResponse({"error": "unauthorized"}, status_code=401)
 
 
@@ -236,9 +244,15 @@ def ping():
 
 @app.get("/login")
 def login_get(request: Request):
-    # If passphrase auth not enabled, show a clear message.
+    # If passphrase auth not enabled, show a clear message (but don't 503, to avoid platform error pages).
     if not PASSPHRASE_SHA256 or len(PASSPHRASE_SHA256) != 64:
-        return HTMLResponse("Passphrase auth not enabled on server", status_code=503)
+        return HTMLResponse(
+            "<html><body style='font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:16px'>"
+            "<h2 style='margin:0 0 8px'>Passphrase login not enabled</h2>"
+            "<div style='opacity:0.75'>Server is not configured with PASSPHRASE_SHA256. Use your token link (?t=...) instead.</div>"
+            "</body></html>",
+            status_code=200,
+        )
     if _is_session_authed(request):
         return RedirectResponse(url="/", status_code=302)
     return HTMLResponse(_login_html(err=str(request.query_params.get('err') or '')))
@@ -247,7 +261,7 @@ def login_get(request: Request):
 @app.post("/login")
 async def login_post(request: Request):
     if not PASSPHRASE_SHA256 or len(PASSPHRASE_SHA256) != 64:
-        return HTMLResponse("Passphrase auth not enabled on server", status_code=503)
+        return RedirectResponse(url="/login", status_code=302)
 
     form = await request.form()
     passphrase = str(form.get('passphrase') or '')
