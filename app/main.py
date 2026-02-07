@@ -340,6 +340,7 @@ async def character_regenerate(cid: str, request: Request):
     body = await request.json()
     new_extra = (body.get("extra") or "").strip() or None
     new_traits = (body.get("traits") or "").strip() or None
+    new_style = (body.get("style") or "").strip() or None
 
     _db_ensure()
     with _db_connect() as conn:
@@ -353,6 +354,10 @@ async def character_regenerate(cid: str, request: Request):
                 raise HTTPException(status_code=404, detail="not found")
             race, clazz, mood, bg, style, old_extra, old_traits, old_image_url = row
 
+    # Allow style override from UI
+    if new_style is not None:
+        style = new_style
+
     # Use same metadata; only extra changes (from UI). Traits drives regen (user-editable).
     extra = new_extra if new_extra is not None else old_extra
     traits = new_traits if new_traits is not None else old_traits
@@ -360,6 +365,12 @@ async def character_regenerate(cid: str, request: Request):
     # If user cleared traits, rebuild it from metadata+extra.
     if not traits:
         traits = _compose_traits(race, clazz, mood, bg, style, extra)
+
+    # Ensure selected style influences the generation. If caller didn't include a Style: tag,
+    # append one so _build_prompt sees it.
+    if style and ("style:" not in (traits or "").lower()):
+        traits = (traits or "").strip()
+        traits = (traits + (", " if traits else "") + f"Style: {style}")
 
     prompt = _build_prompt(traits)
 
@@ -371,8 +382,8 @@ async def character_regenerate(cid: str, request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "update characters set extra=%s, traits=%s, image_url=%s where id=%s",
-                (extra, traits, image_url, cid),
+                "update characters set extra=%s, traits=%s, style=%s, image_url=%s where id=%s",
+                (extra, traits, style, image_url, cid),
             )
             if cur.rowcount != 1:
                 raise HTTPException(status_code=404, detail="not found")
@@ -837,10 +848,21 @@ btnGen.onclick = async () => {{
 }};
 
 btnRegen.onclick = async () => {{
+  const styles = ['Illustrated fantasy','Flat vector','Comic / cel shaded','Photoreal'];
+  const choice = prompt('Choose style for regeneration:\n' + styles.map((s,i)=>`${{i+1}}) ${{s}}`).join('\n') + '\n\nEnter 1-4:');
+  if (!choice) return;
+  const idx = parseInt(String(choice).trim(), 10) - 1;
+  if (!(idx >= 0 && idx < styles.length)) {{
+    alert('Invalid choice');
+    return;
+  }}
+  const style = styles[idx];
+
   btnRegen.disabled = true;
   msg.textContent = 'Regenerating image…';
   try {{
     const payload = {{
+      style,
       extra: document.getElementById('extra').value,
       traits: document.getElementById('traits').value,
     }};
