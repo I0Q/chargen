@@ -29,7 +29,41 @@ def _spaces_public_base(cfg: dict[str,str]) -> str:
     # e.g. https://bucket.sfo3.digitaloceanspaces.com
     return f"https://{cfg['SPACES_BUCKET']}.{cfg['SPACES_ENDPOINT']}"
 
-def _upload_png_to_spaces(img: bytes) -> str:
+
+def _make_png_thumbnail(img: bytes, *, size: int = 256) -> bytes:
+    # Square thumbnail (preserves aspect by cover-cropping, then resize).
+    from PIL import Image
+    import io
+
+    im = Image.open(io.BytesIO(img)).convert('RGBA')
+    w, h = im.size
+    # center crop to square
+    m = min(w, h)
+    left = (w - m) // 2
+    top = (h - m) // 2
+    im = im.crop((left, top, left + m, top + m))
+    im = im.resize((size, size), Image.Resampling.LANCZOS)
+
+    out = io.BytesIO()
+    im.save(out, format='PNG', optimize=True)
+    return out.getvalue()
+
+
+def _upload_png_and_thumb_to_spaces(img: bytes) -> tuple[str, str | None]:
+    """Upload full PNG and a small thumbnail PNG. Returns (image_url, thumb_url)."""
+    # Upload original
+    image_url = _upload_png_to_spaces(img, key_prefix='chargen')
+
+    # Upload thumb (best-effort)
+    try:
+        thumb = _make_png_thumbnail(img, size=256)
+        thumb_url = _upload_png_to_spaces(thumb, key_prefix='chargen-thumbs')
+    except Exception:
+        thumb_url = None
+
+    return image_url, thumb_url
+
+def _upload_png_to_spaces(img: bytes, *, key_prefix: str = 'chargen') -> str:
     cfg = _spaces_cfg()
     if not cfg:
         raise HTTPException(status_code=503, detail='Spaces not configured')
@@ -47,7 +81,7 @@ def _upload_png_to_spaces(img: bytes) -> str:
     )
 
     now = datetime.now(timezone.utc)
-    key = f"chargen/{now:%Y/%m/%d}/{uuid.uuid4().hex}.png"
+    key = f"{key_prefix}/{now:%Y/%m/%d}/{uuid.uuid4().hex}.png"
     client.put_object(
         Bucket=cfg['SPACES_BUCKET'],
         Key=key,
@@ -84,12 +118,14 @@ def _db_init():
                   extra text,
                   traits text not null,
                   image_url text not null,
+                  thumb_url text,
                   quote text
                 );
 
                 -- lightweight migration for older rows
                 alter table characters add column if not exists quote text;
                 alter table characters add column if not exists gender text;
+                alter table characters add column if not exists thumb_url text;
                 """
             )
         conn.commit()
@@ -379,13 +415,13 @@ async def character_regenerate(cid: str, request: Request):
     b64 = _gemini_generate_image_b64(prompt)
     img = base64.b64decode(b64)
 
-    image_url = _upload_png_to_spaces(img)
+    image_url, thumb_url = _upload_png_and_thumb_to_spaces(img)
 
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "update characters set extra=%s, traits=%s, style=%s, image_url=%s where id=%s",
-                (extra, traits, style, image_url, cid),
+                "update characters set extra=%s, traits=%s, style=%s, image_url=%s, thumb_url=%s where id=%s",
+                (extra, traits, style, image_url, thumb_url, cid),
             )
             if cur.rowcount != 1:
                 raise HTTPException(status_code=404, detail="not found")
@@ -394,7 +430,7 @@ async def character_regenerate(cid: str, request: Request):
     # Best-effort cleanup of old image
     _delete_spaces_object_if_ours(old_image_url)
 
-    return {"ok": True, "image_url": image_url}
+    return {"ok": True, "image_url": image_url, "thumb_url": thumb_url}
 
 
 @app.post("/api/character/{cid}/delete")
@@ -585,7 +621,7 @@ async def generate(request: Request):
     b64 = _gemini_generate_image_b64(prompt)
     img = base64.b64decode(b64)
 
-    image_url = _upload_png_to_spaces(img)
+    image_url, thumb_url = _upload_png_and_thumb_to_spaces(img)
     char_id = uuid.uuid4()
 
     _db_ensure()
@@ -594,9 +630,9 @@ async def generate(request: Request):
             cur.execute(
                 """
                 insert into characters
-                  (id, created_at, name, race, class, mood, background, gender, style, extra, traits, image_url)
+                  (id, created_at, name, race, class, mood, background, gender, style, extra, traits, image_url, thumb_url)
                 values
-                  (%s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                  (%s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     str(char_id),
@@ -610,6 +646,7 @@ async def generate(request: Request):
                     extra,
                     traits,
                     image_url,
+                    thumb_url,
                 ),
             )
         conn.commit()
@@ -632,18 +669,19 @@ def characters(request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select id, created_at, name, race, class, gender, style, extra, traits, image_url from characters order by created_at desc limit 60"
+                "select id, created_at, name, race, class, gender, style, extra, traits, image_url, thumb_url from characters order by created_at desc limit 60"
             )
             rows = cur.fetchall()
 
     cards = []
-    for cid, created_at, name, race, clazz, gender, style, extra, traits, image_url in rows:
+    for cid, created_at, name, race, clazz, gender, style, extra, traits, image_url, thumb_url in rows:
         meta = " • ".join([x for x in [race or "", clazz or "", gender or "", style or ""] if x])
         edit_url = f"/c/{cid}?t={t}"
+        thumb = thumb_url or image_url
         cards.append(
             "<div class='card'>"
             f"<a href='{edit_url}'>"
-            f"<img src='{image_url}' loading='lazy' />"
+            f"<img src='{thumb}' loading='lazy' />"
             "</a>"
             f"<div class='cname'><a href='{edit_url}'>{name}</a></div>"
             f"<div class='cmeta'>{meta}</div>"
@@ -745,8 +783,14 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 
   <div class='wrap'>
 
-    <a href='{esc(image_url)}' target='_blank' rel='noopener'>
-      <img src='{esc(image_url)}' />
+    <a href='{esc(image_url)}' target='_blank' rel='noopener' style='display:block;'>
+      <div style='position:relative; display:block;'>
+        <img id='mainimg' src='{esc(image_url)}' style='display:block; width:100%; border-radius:12px;' />
+        <div id='imgOverlay' style='display:none; position:absolute; inset:0; border-radius:12px; background:rgba(0,0,0,0.28); align-items:center; justify-content:center; flex-direction:column; gap:10px; color:#fff;'>
+          <div style='width:28px;height:28px;border:3px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%; animation:spin 0.9s linear infinite;'></div>
+          <div style='font-size:14px; opacity:0.95;'>Regenerating…</div>
+        </div>
+      </div>
     </a>
 
     <div style='display:flex; gap:10px; margin-top:10px;'>
@@ -785,7 +829,8 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 const token = {t!r};
 const cid = {str(cid)!r};
 const msg = document.getElementById('msg');
-const previewImg = document.querySelector('img');
+const previewImg = document.getElementById('mainimg');
+const imgOverlay = document.getElementById('imgOverlay');
 const dlimg = document.getElementById('dlimg');
 const btnRegen = document.getElementById('regen');
 const btnDel = document.getElementById('del');
@@ -867,6 +912,7 @@ btnRegen.onclick = async () => {{
 
   btnRegen.disabled = true;
   msg.textContent = 'Regenerating image…';
+  if (imgOverlay) imgOverlay.style.display = 'flex';
   try {{
     const payload = {{
       style,
@@ -882,6 +928,7 @@ btnRegen.onclick = async () => {{
   }} catch (e) {{
     msg.textContent = 'Error: ' + String(e);
   }} finally {{
+    if (imgOverlay) imgOverlay.style.display = 'none';
     btnRegen.disabled = false;
   }}
 }};
