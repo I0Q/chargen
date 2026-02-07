@@ -10,7 +10,86 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+import uuid
+from datetime import datetime, timezone
+
+def _db_url() -> str | None:
+    return os.environ.get('DATABASE_URL')
+
+def _spaces_cfg() -> dict[str,str] | None:
+    keys = ['SPACES_ACCESS_KEY','SPACES_SECRET_KEY','SPACES_BUCKET','SPACES_REGION','SPACES_ENDPOINT']
+    if not all(os.environ.get(k) for k in keys):
+        return None
+    return {k: os.environ[k] for k in keys}
+
+def _spaces_public_base(cfg: dict[str,str]) -> str:
+    # e.g. https://bucket.sfo3.digitaloceanspaces.com
+    return f"https://{cfg['SPACES_BUCKET']}.{cfg['SPACES_ENDPOINT']}"
+
+def _upload_png_to_spaces(img: bytes) -> str:
+    cfg = _spaces_cfg()
+    if not cfg:
+        raise HTTPException(status_code=503, detail='Spaces not configured')
+
+    import boto3
+    from botocore.client import Config
+
+    client = boto3.client(
+        's3',
+        region_name=cfg['SPACES_REGION'],
+        endpoint_url=f"https://{cfg['SPACES_ENDPOINT']}",
+        aws_access_key_id=cfg['SPACES_ACCESS_KEY'],
+        aws_secret_access_key=cfg['SPACES_SECRET_KEY'],
+        config=Config(signature_version='s3v4'),
+    )
+
+    now = datetime.now(timezone.utc)
+    key = f"chargen/{now:%Y/%m/%d}/{uuid.uuid4().hex}.png"
+    client.put_object(
+        Bucket=cfg['SPACES_BUCKET'],
+        Key=key,
+        Body=img,
+        ContentType='image/png',
+        ACL='public-read',
+        CacheControl='public, max-age=31536000, immutable',
+    )
+    return _spaces_public_base(cfg) + '/' + key
+
+def _db_connect():
+    url = _db_url()
+    if not url:
+        raise HTTPException(status_code=503, detail='DATABASE_URL not configured')
+    import psycopg
+    return psycopg.connect(url)
+
+def _db_init():
+    try:
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute('''
+                create table if not exists characters (
+                  id uuid primary key,
+                  created_at timestamptz not null,
+                  name text not null,
+                  race text,
+                  class text,
+                  mood text,
+                  background text,
+                  style text,
+                  extra text,
+                  traits text not null,
+                  image_url text not null
+                );
+                ''')
+            conn.commit()
+    except Exception:
+        # don't crash the whole app on cold start; requests will show a clear error
+        return
+
+
 app = FastAPI(title="CharGen", version="0.0.2")
+
+_db_init()
 
 
 def _get_token() -> str | None:
@@ -150,8 +229,17 @@ def _gemini_generate_image_b64(prompt: str) -> str:
 @app.post("/generate")
 async def generate(request: Request):
     body = await request.json()
-    traits = (body.get("traits") or "").strip()
+
+    # From UI
     name = (body.get("name") or "").strip()
+    race = (body.get("race") or "").strip() or None
+    clazz = (body.get("clazz") or "").strip() or None
+    mood = (body.get("mood") or "").strip() or None
+    bg = (body.get("bg") or "").strip() or None
+    style = (body.get("style") or "").strip() or None
+    extra = (body.get("extra") or "").strip() or None
+
+    traits = (body.get("traits") or "").strip()
     if not traits:
         raise HTTPException(status_code=400, detail="missing traits")
 
@@ -162,7 +250,88 @@ async def generate(request: Request):
     b64 = _gemini_generate_image_b64(prompt)
     img = base64.b64decode(b64)
 
+    image_url = _upload_png_to_spaces(img)
+    char_id = uuid.uuid4()
+
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into characters
+                  (id, created_at, name, race, class, mood, background, style, extra, traits, image_url)
+                values
+                  (%s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    str(char_id),
+                    name or "Unnamed",
+                    race,
+                    clazz,
+                    mood,
+                    bg,
+                    style,
+                    extra,
+                    traits,
+                    image_url,
+                ),
+            )
+        conn.commit()
+
     return Response(content=img, media_type="image/png")
+
+
+@app.get("/history", response_class=HTMLResponse)
+def history(request: Request):
+    t = _token_for_links(request)
+
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select created_at, name, race, class, style, image_url from characters order by created_at desc limit 60"
+            )
+            rows = cur.fetchall()
+
+    cards = []
+    for created_at, name, race, clazz, style, image_url in rows:
+        meta = " • ".join([x for x in [race or "", clazz or "", style or ""] if x])
+        cards.append(
+            "<div class='card'>"
+            f"<a href='{image_url}' target='_blank' rel='noopener'>"
+            f"<img src='{image_url}' loading='lazy' />"
+            "</a>"
+            f"<div class='cname'>{name}</div>"
+            f"<div class='cmeta'>{meta}</div>"
+            "</div>"
+        )
+
+    html = f"""<!doctype html>
+<html><head>
+<meta charset='utf-8' />
+<meta name='viewport' content='width=device-width, initial-scale=1' />
+<title>CharGen History</title>
+<style>
+body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
+.topbar{{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}}
+.grid{{display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;}}
+@media (min-width: 520px){{ .grid{{grid-template-columns:repeat(3, 1fr);}} }}
+.card{{border:1px solid rgba(0,0,0,0.12); border-radius:12px; padding:8px;}}
+.card img{{width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:10px; background:#111;}}
+.cname{{font-weight:600; margin-top:6px;}}
+.cmeta{{opacity:0.7; font-size:12px;}}
+a{{text-decoration:none; color:inherit;}}
+</style>
+</head>
+<body>
+  <div class='topbar'>
+    <div><b>History</b></div>
+    <div><a href='/?t={t}'>Back</a></div>
+  </div>
+  <div class='grid'>
+    {''.join(cards) if cards else '<div style="opacity:0.7">No renders yet.</div>'}
+  </div>
+</body></html>"""
+
+    return HTMLResponse(html)
 
 
 @app.get("/")
@@ -210,7 +379,7 @@ def index(request: Request):
 </head>
 <body>
   <h2>CharGen</h2>
-  <div class="muted">Pick options + (optional) details. Tap Generate.</div>
+  <div class="muted">Pick options + (optional) details. Tap Generate. <a href="/history?t={t}">History</a></div>
 
   <div class="top">
     <div class="preview">
@@ -397,7 +566,16 @@ btn.onclick = async () => {{
     const resp = await fetch('/generate?t=' + encodeURIComponent(token), {{
       method: 'POST',
       headers: {{'Content-Type':'application/json'}},
-      body: JSON.stringify({{traits, name}})
+      body: JSON.stringify({{
+        traits,
+        name,
+        race: val('race'),
+        clazz: val('clazz'),
+        mood: val('mood'),
+        bg: val('bg'),
+        style: (document.querySelector("input[name='style']:checked")?.value || ''),
+        extra: val('traits'),
+      }})
     }});
     if (!resp.ok) {{
       const txt = await resp.text();
