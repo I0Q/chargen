@@ -264,22 +264,30 @@ def ping():
 def login_get(request: Request):
     # If passphrase auth not enabled, show a clear message (but don't 503, to avoid platform error pages).
     if not PASSPHRASE_SHA256 or len(PASSPHRASE_SHA256) != 64:
-        return HTMLResponse(
+        resp = HTMLResponse(
             "<html><body style='font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:16px'>"
             "<h2 style='margin:0 0 8px'>Passphrase login not enabled</h2>"
             "<div style='opacity:0.75'>Server is not configured with PASSPHRASE_SHA256. Use your token link (?t=...) instead.</div>"
             "</body></html>",
             status_code=200,
         )
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
     if _is_session_authed(request):
-        return RedirectResponse(url="/", status_code=302)
-    return HTMLResponse(_login_html(err=str(request.query_params.get('err') or '')))
+        resp = RedirectResponse(url="/", status_code=302)
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
+    resp = HTMLResponse(_login_html(err=str(request.query_params.get('err') or '')))
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 @app.post("/login")
 async def login_post(request: Request):
     if not PASSPHRASE_SHA256 or len(PASSPHRASE_SHA256) != 64:
-        return RedirectResponse(url="/login", status_code=302)
+        resp = RedirectResponse(url="/login", status_code=302)
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
 
     form = await request.form()
     passphrase = str(form.get('passphrase') or '')
@@ -295,12 +303,15 @@ async def login_post(request: Request):
     if not ok:
         # small delay to slow brute force
         time.sleep(0.35)
-        return RedirectResponse(url="/login?err=Wrong%20passphrase", status_code=302)
+        resp = RedirectResponse(url="/login?err=Wrong%20passphrase", status_code=302)
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
 
     sid = uuid.uuid4().hex
     _sessions[sid] = time.time()
 
     resp = RedirectResponse(url="/", status_code=302)
+    resp.headers['Cache-Control'] = 'no-store'
     resp.set_cookie(
         key='cg_sid',
         value=sid,
@@ -319,6 +330,7 @@ def logout(request: Request):
     if sid:
         _sessions.pop(sid, None)
     resp = RedirectResponse(url="/login", status_code=302)
+    resp.headers['Cache-Control'] = 'no-store'
     resp.delete_cookie('cg_sid', path='/')
     return resp
 
