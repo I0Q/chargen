@@ -410,8 +410,15 @@ async def generate(request: Request):
     return Response(content=img, media_type="image/png")
 
 
-@app.get("/history", response_class=HTMLResponse)
-def history(request: Request):
+
+
+@app.get("/history")
+def history_redirect(request: Request):
+    t = _token_for_links(request)
+    return HTMLResponse(f"<meta http-equiv='refresh' content='0; url=/characters?t={t}'>")
+
+@app.get("/characters", response_class=HTMLResponse)
+def characters(request: Request):
     t = _token_for_links(request)
 
     _db_ensure()
@@ -440,7 +447,7 @@ def history(request: Request):
 <html><head>
 <meta charset='utf-8' />
 <meta name='viewport' content='width=device-width, initial-scale=1' />
-<title>CharGen History</title>
+<title>CharGen Characters</title>
 <style>
 body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
 .topbar{{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}}
@@ -455,8 +462,8 @@ a{{text-decoration:none; color:inherit;}}
 </head>
 <body>
   <div class='topbar'>
-    <div><b>History</b></div>
-    <div><a href='/?t={t}'>Back</a></div>
+    <div><b>Characters</b></div>
+    <div><a href='/?t={t}'>Generate a new character</a></div>
   </div>
   <div class='grid'>
     {''.join(cards) if cards else '<div style="opacity:0.7">No renders yet.</div>'}
@@ -501,12 +508,12 @@ def character_page(cid: str, request: Request):
 <html><head>
 <meta charset='utf-8' />
 <meta name='viewport' content='width=device-width, initial-scale=1' />
-<title>CharGen Character</title>
+<title>{esc(name) or 'Character'}</title>
 <style>
 body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
 .topbar{{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}}
 .wrap{{max-width:520px; margin:0 auto; padding-bottom:92px;}}
-img{{width:100%; max-width:320px; aspect-ratio:1/1; object-fit:cover; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#111;}}
+img{{display:block; width:100%; max-width:320px; margin:0 auto; aspect-ratio:1/1; object-fit:cover; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#111;}}
 label{{display:block; font-size:12px; opacity:0.7; margin:12px 0 6px;}}
 input, textarea{{width:100%; box-sizing:border-box; padding:12px; font-size:16px; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
 textarea{{min-height:120px;}}
@@ -523,8 +530,8 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 <body>
   <div class='wrap'>
     <div class='topbar'>
-      <div><b>Character</b></div>
-      <div><a href='/history?t={t}'>History</a></div>
+      <div><b>{esc(name) or 'Character'}</b></div>
+      <div><a href='/characters?t={t}'>Characters</a></div>
     </div>
 
     <a href='{esc(image_url)}' target='_blank' rel='noopener'>
@@ -663,7 +670,7 @@ btnDel.onclick = async () => {{
   msg.textContent = 'Deleting…';
   try {{
     await postJson(`/api/character/${{cid}}/delete?t=${{encodeURIComponent(token)}}`, {{}});
-    window.location.href = `/history?t=${{encodeURIComponent(token)}}`;
+    window.location.href = `/characters?t=${{encodeURIComponent(token)}}`;
   }} catch (e) {{
     msg.textContent = 'Error: ' + String(e);
     btnDel.disabled = false;
@@ -834,7 +841,7 @@ def index(request: Request):
 </head>
 <body>
   <h2>CharGen</h2>
-  <div class="muted">Pick options + (optional) details. Tap Generate. <a href="/history?t={t}">History</a></div>
+  <div class="muted">Pick options + (optional) details. Tap Generate. <a href="/characters?t={t}">Characters</a></div>
 
   <div class="top">
     <div class="preview">
