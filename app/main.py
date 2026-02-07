@@ -1314,8 +1314,14 @@ function pickRandom(selectId) {{
   if (!el) return;
   const n = el.options.length;
   if (n <= 1) return;
-  // include (any) where present
-  el.selectedIndex = Math.floor(Math.random() * n);
+
+  // If first option is (any), do NOT pick it.
+  const first = (el.options[0]?.value || el.options[0]?.text || '').toLowerCase();
+  const hasAny = first.includes('(any)');
+  const start = hasAny ? 1 : 0;
+  const span = n - start;
+  if (span <= 0) return;
+  el.selectedIndex = start + Math.floor(Math.random() * span);
 }}
 
 function doRandomize() {{
