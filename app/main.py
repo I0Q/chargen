@@ -79,8 +79,12 @@ def _db_init():
                   style text,
                   extra text,
                   traits text not null,
-                  image_url text not null
+                  image_url text not null,
+                  quote text
                 );
+
+                -- lightweight migration for older rows
+                alter table characters add column if not exists quote text;
                 """
             )
         conn.commit()
@@ -353,7 +357,7 @@ def character_page(cid: str, request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select id, created_at, name, race, class, mood, background, style, extra, traits, image_url from characters where id = %s",
+                "select id, created_at, name, race, class, mood, background, style, extra, traits, image_url, quote from characters where id = %s",
                 (cid,),
             )
             row = cur.fetchone()
@@ -361,7 +365,7 @@ def character_page(cid: str, request: Request):
     if not row:
         raise HTTPException(status_code=404, detail="not found")
 
-    (cid, created_at, name, race, clazz, mood, bg, style, extra, traits, image_url) = row
+    (cid, created_at, name, race, clazz, mood, bg, style, extra, traits, image_url, quote) = row
 
     def esc(s: str | None) -> str:
         if not s:
@@ -416,6 +420,10 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
     <label>Details (notes)</label>
     <textarea id='extra'>{esc(extra)}</textarea>
 
+    <label>Quote</label>
+    <textarea id='quote' placeholder='Generate a quote…'>{esc(quote)}</textarea>
+    <button id='genquote' type='button' style='margin-top:10px;'>✨ Generate Quote</button>
+
     <label>Traits string (advanced)</label>
     <textarea id='traits'>{esc(traits)}</textarea>
 
@@ -458,24 +466,57 @@ document.getElementById('dldetails').onclick = () => {{
   downloadText(fname + '.txt', lines.join('\\n'));
 }};
 
-document.getElementById('save').onclick = async () => {{
-  msg.textContent = 'Saving…';
-  const payload = {{
-    name: document.getElementById('name').value,
-    extra: document.getElementById('extra').value,
-    traits: document.getElementById('traits').value,
-  }};
-  const resp = await fetch(`/api/character/${{cid}}?t=${{encodeURIComponent(token)}}`, {{
+const btnSave = document.getElementById('save');
+const btnGen = document.getElementById('genquote');
+
+async function postJson(url, payload) {{
+  const resp = await fetch(url, {{
     method: 'POST',
     headers: {{'Content-Type':'application/json'}},
     body: JSON.stringify(payload),
   }});
   const txt = await resp.text();
-  if (!resp.ok) {{
-    msg.textContent = 'Error: ' + txt;
-    return;
+  if (!resp.ok) throw new Error(txt);
+  try {{ return JSON.parse(txt); }} catch {{ return {{ok:true}}; }}
+}}
+
+btnGen.onclick = async () => {{
+  btnGen.disabled = true;
+  msg.textContent = 'Generating quote…';
+  try {{
+    const out = await postJson(`/api/character/${{cid}}/quote?t=${{encodeURIComponent(token)}}`, {{}});
+    if (out && out.quote) document.getElementById('quote').value = out.quote;
+    msg.textContent = 'Quote generated.';
+  }} catch (e) {{
+    msg.textContent = 'Error: ' + String(e);
+  }} finally {{
+    btnGen.disabled = false;
   }}
-  msg.textContent = 'Saved.';
+}};
+
+btnSave.onclick = async () => {{
+  // simple save animation
+  const old = btnSave.textContent;
+  btnSave.disabled = true;
+  btnSave.textContent = 'Saving…';
+  msg.textContent = '';
+
+  const payload = {{
+    name: document.getElementById('name').value,
+    extra: document.getElementById('extra').value,
+    quote: document.getElementById('quote').value,
+    traits: document.getElementById('traits').value,
+  }};
+
+  try {{
+    await postJson(`/api/character/${{cid}}?t=${{encodeURIComponent(token)}}`, payload);
+    msg.textContent = 'Saved.';
+  }} catch (e) {{
+    msg.textContent = 'Error: ' + String(e);
+  }} finally {{
+    btnSave.disabled = false;
+    btnSave.textContent = old;
+  }}
 }};
 </script>
 </body></html>"""
@@ -483,11 +524,80 @@ document.getElementById('save').onclick = async () => {{
     return HTMLResponse(html)
 
 
+@app.post("/api/character/{cid}/quote")
+async def character_generate_quote(cid: str, request: Request):
+    # Generate a short in-character quote based on stored traits.
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select name, race, class, mood, background, style, extra, traits from characters where id=%s",
+                (cid,),
+            )
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+
+    name, race, clazz, mood, bg, style, extra, traits = row
+
+    prompt = (
+        "Write ONE short quote (max 25 words) that this fantasy RPG character would say. "
+        "First-person voice. No quote marks. No emojis. No modern references. "
+        "Do not include the character's name unless it would naturally be spoken.\n\n"
+        f"Name: {name}\n"
+        f"Race: {race}\nClass: {clazz}\nMood: {mood}\nBackground: {bg}\nStyle: {style}\n"
+        f"Details: {extra}\nTraits: {traits}\n"
+    )
+
+    # Use Gemini text generation (same API; image model key already configured).
+    # We call generateContent and extract first text part.
+    key = _gemini_key()
+    if not key:
+        raise HTTPException(status_code=503, detail="GEMINI_API_KEY not configured")
+
+    model = os.environ.get("GEMINI_TEXT_MODEL", "gemini-2.0-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as e:  # type: ignore[attr-defined]
+        raw = e.read()
+        raise HTTPException(status_code=e.code, detail=raw.decode("utf-8", "ignore"))
+
+    data = json.loads(raw)
+    text_out = None
+    for cand in (data.get("candidates") or []):
+        content = (cand or {}).get("content") or {}
+        for part in (content.get("parts") or []):
+            if isinstance(part, dict) and part.get("text"):
+                text_out = part["text"].strip()
+                break
+        if text_out:
+            break
+
+    if not text_out:
+        raise HTTPException(status_code=502, detail="no text returned")
+
+    # Keep it single-line.
+    text_out = " ".join(text_out.split())
+
+    return {"quote": text_out}
+
+
 @app.post("/api/character/{cid}")
 async def character_update(cid: str, request: Request):
     body = await request.json()
     name = (body.get("name") or "").strip() or None
     extra = (body.get("extra") or "").strip() or None
+    quote = (body.get("quote") or "").strip() or None
     traits = (body.get("traits") or "").strip() or None
 
     if not name:
@@ -497,8 +607,8 @@ async def character_update(cid: str, request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "update characters set name=%s, extra=%s, traits=%s where id=%s",
-                (name, extra, traits, cid),
+                "update characters set name=%s, extra=%s, quote=%s, traits=%s where id=%s",
+                (name, extra, quote, traits, cid),
             )
             if cur.rowcount != 1:
                 raise HTTPException(status_code=404, detail="not found")
