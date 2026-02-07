@@ -295,19 +295,20 @@ def history(request: Request):
     with _db_connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select created_at, name, race, class, style, image_url from characters order by created_at desc limit 60"
+                "select id, created_at, name, race, class, style, extra, traits, image_url from characters order by created_at desc limit 60"
             )
             rows = cur.fetchall()
 
     cards = []
-    for created_at, name, race, clazz, style, image_url in rows:
+    for cid, created_at, name, race, clazz, style, extra, traits, image_url in rows:
         meta = " • ".join([x for x in [race or "", clazz or "", style or ""] if x])
+        edit_url = f"/c/{cid}?t={t}"
         cards.append(
             "<div class='card'>"
-            f"<a href='{image_url}' target='_blank' rel='noopener'>"
+            f"<a href='{edit_url}'>"
             f"<img src='{image_url}' loading='lazy' />"
             "</a>"
-            f"<div class='cname'>{name}</div>"
+            f"<div class='cname'><a href='{edit_url}'>{name}</a></div>"
             f"<div class='cmeta'>{meta}</div>"
             "</div>"
         )
@@ -342,6 +343,133 @@ a{{text-decoration:none; color:inherit;}}
     return HTMLResponse(html)
 
 
+
+
+@app.get("/c/{cid}", response_class=HTMLResponse)
+def character_page(cid: str, request: Request):
+    t = _token_for_links(request)
+    _db_ensure()
+
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select id, created_at, name, race, class, mood, background, style, extra, traits, image_url from characters where id = %s",
+                (cid,),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+
+    (cid, created_at, name, race, clazz, mood, bg, style, extra, traits, image_url) = row
+
+    def esc(s: str | None) -> str:
+        if not s:
+            return ""
+        return (
+            str(s)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    html = f"""<!doctype html>
+<html><head>
+<meta charset='utf-8' />
+<meta name='viewport' content='width=device-width, initial-scale=1' />
+<title>CharGen Character</title>
+<style>
+body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:14px;}}
+.topbar{{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}}
+.wrap{{max-width:520px; margin:0 auto;}}
+img{{width:100%; max-width:320px; aspect-ratio:1/1; object-fit:cover; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#111;}}
+label{{display:block; font-size:12px; opacity:0.7; margin:12px 0 6px;}}
+input, textarea{{width:100%; box-sizing:border-box; padding:12px; font-size:16px; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
+textarea{{min-height:120px;}}
+button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
+.muted{{opacity:0.7; font-size:13px;}}
+#msg{{margin-top:10px;}}
+</style>
+</head>
+<body>
+  <div class='wrap'>
+    <div class='topbar'>
+      <div><b>Character</b></div>
+      <div><a href='/history?t={t}'>History</a></div>
+    </div>
+
+    <a href='{esc(image_url)}' target='_blank' rel='noopener'>
+      <img src='{esc(image_url)}' />
+    </a>
+
+    <div class='muted' style='margin-top:8px;'>ID: {esc(str(cid))}</div>
+
+    <label>Name</label>
+    <input id='name' value="{esc(name)}" />
+
+    <label>Details (notes)</label>
+    <textarea id='extra'>{esc(extra)}</textarea>
+
+    <label>Traits string (advanced)</label>
+    <textarea id='traits'>{esc(traits)}</textarea>
+
+    <button id='save'>Save</button>
+    <div id='msg' class='muted'></div>
+  </div>
+
+<script>
+const token = {t!r};
+const cid = {str(cid)!r};
+const msg = document.getElementById('msg');
+
+document.getElementById('save').onclick = async () => {{
+  msg.textContent = 'Saving…';
+  const payload = {{
+    name: document.getElementById('name').value,
+    extra: document.getElementById('extra').value,
+    traits: document.getElementById('traits').value,
+  }};
+  const resp = await fetch(`/api/character/${{cid}}?t=${{encodeURIComponent(token)}}`, {{
+    method: 'POST',
+    headers: {{'Content-Type':'application/json'}},
+    body: JSON.stringify(payload),
+  }});
+  const txt = await resp.text();
+  if (!resp.ok) {{
+    msg.textContent = 'Error: ' + txt;
+    return;
+  }}
+  msg.textContent = 'Saved.';
+}};
+</script>
+</body></html>"""
+
+    return HTMLResponse(html)
+
+
+@app.post("/api/character/{cid}")
+async def character_update(cid: str, request: Request):
+    body = await request.json()
+    name = (body.get("name") or "").strip() or None
+    extra = (body.get("extra") or "").strip() or None
+    traits = (body.get("traits") or "").strip() or None
+
+    if not name:
+        raise HTTPException(status_code=400, detail="missing name")
+
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "update characters set name=%s, extra=%s, traits=%s where id=%s",
+                (name, extra, traits, cid),
+            )
+            if cur.rowcount != 1:
+                raise HTTPException(status_code=404, detail="not found")
+        conn.commit()
+
+    return {"ok": True}
 @app.get("/")
 def index(request: Request):
     t = _token_for_links(request)
