@@ -4,7 +4,7 @@ A phone-friendly D&D-style character avatar generator.
 
 ## What it does
 
-- **Generate page** (`/`): pick options + free-text details, then generate an avatar.
+- **Generate page** (`/`): pick options + free-text details, then generate an avatar (includes style preview placeholders).
 - **Characters page** (`/characters`): grid of generated characters.
 - **Character details page** (`/c/<uuid>`): edit name/details/traits, regenerate image, delete, generate an in-character quote (appended to details).
 
