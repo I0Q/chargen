@@ -97,8 +97,6 @@ def _db_ensure():
 
 app = FastAPI(title="CharGen", version="0.0.2")
 
-_db_init()
-
 
 def _get_token() -> str | None:
     return os.environ.get("CHARGEN_TOKEN")
