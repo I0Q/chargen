@@ -151,10 +151,14 @@ def _gemini_generate_image_b64(prompt: str) -> str:
 async def generate(request: Request):
     body = await request.json()
     traits = (body.get("traits") or "").strip()
+    name = (body.get("name") or "").strip()
     if not traits:
         raise HTTPException(status_code=400, detail="missing traits")
 
     prompt = _build_prompt(traits)
+    if name:
+        prompt = prompt + f"\nCharacter name (for vibe only; do not write text): {name}\n"
+
     b64 = _gemini_generate_image_b64(prompt)
     img = base64.b64decode(b64)
 
@@ -187,7 +191,8 @@ def index(request: Request):
 
     label{{display:block; font-size:12px; opacity:0.7; margin:0 0 6px;}}
     select{{width:100%; padding:10px; font-size:16px;}}
-    textarea{{width:100%; min-height:84px; padding:12px; font-size:16px; margin-top:10px;}}
+    input{{width:100%; padding:12px; font-size:16px; box-sizing:border-box; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
+    textarea{{width:100%; min-height:84px; padding:12px; font-size:16px; margin-top:10px; box-sizing:border-box; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
     button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 
     .actions{{max-width:360px; margin:0 auto;}}
@@ -279,6 +284,8 @@ def index(request: Request):
 </div>
 
 <div class="actions">
+  <label>Character name (optional)</label>
+  <input id="name" type="text" placeholder="Leave blank to auto-generate" />
   <textarea id="traits" placeholder="Optional details: hair, eyes, skin, armor/robe, weapon, colors, scars, accessories…"></textarea>
   <button id="go">Generate</button>
   <div id="dl"></div>
@@ -320,6 +327,25 @@ function setGenerating(on) {{
   overlay.style.display = on ? 'flex' : 'none';
 }}
 
+function randFrom(arr) {{
+  return arr[Math.floor(Math.random() * arr.length)];
+}}
+
+function autoName(seedText) {{
+  // Lightweight fantasy-ish name generator.
+  const a = ['Al','Bel','Cor','Da','El','Fa','Gal','Hel','Is','Ka','Lor','Mal','Nor','Or','Per','Quin','Ral','Ser','Tor','Ul','Val','Wyn','Yor','Zan'];
+  const b = ['a','e','i','o','u','ae','ia','oi','ua','y'];
+  const c = ['dor','rin','thas','wyn','mir','ion','rak','len','vash','gorn','bryn','syl','dun','mar','reth','zair','nox','lith','var','keth'];
+  // try to be stable-ish per click by mixing seedText length
+  const n = (seedText || '').length;
+  const pick = (arr, k) => arr[(n + k + Math.floor(Math.random()*1000)) % arr.length];
+  return pick(a,1) + pick(b,2) + pick(c,3);
+}}
+
+function safeFilename(s) {{
+  return (s || 'avatar').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,40) || 'avatar';
+}}
+
 btn.onclick = async () => {{
   dl.style.display = 'none';
   dl.innerHTML = '';
@@ -328,10 +354,13 @@ btn.onclick = async () => {{
 
   try {{
     const traits = buildTraits();
+    let name = val('name');
+    if (!name) name = autoName(traits);
+
     const resp = await fetch('/generate?t=' + encodeURIComponent(token), {{
       method: 'POST',
       headers: {{'Content-Type':'application/json'}},
-      body: JSON.stringify({{traits}})
+      body: JSON.stringify({{traits, name}})
     }});
     if (!resp.ok) {{
       const txt = await resp.text();
@@ -345,8 +374,9 @@ btn.onclick = async () => {{
     // reveal image in-place
     previewImg.src = url;
 
+    const fname = safeFilename(name) + '.png';
     dl.style.display = 'block';
-    dl.innerHTML = `<a download="avatar.png" href="${{url}}">⬇ Download</a>`;
+    dl.innerHTML = `<a download="${{fname}}" href="${{url}}">⬇ Download</a>`;
   }} catch (e) {{
     dl.style.display = 'block';
     dl.innerHTML = '<pre style="white-space:pre-wrap;color:#b00; margin:10px 0 0">' + String(e) + '</pre>';
