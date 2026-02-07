@@ -10,10 +10,19 @@ A phone-friendly D&D-style character avatar generator.
 
 ## Auth
 
-The app is token-gated.
+Two supported auth mechanisms:
 
+1) **Token gate** (phone-friendly)
 - Set `CHARGEN_TOKEN`
 - Provide it as `?t=...` or `Authorization: Bearer ...`
+
+2) **Passphrase session** (same approach as RNG app)
+- Set `PASSPHRASE_SHA256` to the **sha256 hex** of your passphrase
+- Visit `/login` and enter the passphrase (server sets an HttpOnly secure cookie)
+
+Notes:
+- If both are configured, either one works.
+- API calls without auth return JSON 401; browser page loads redirect to `/login`.
 
 ## Storage
 

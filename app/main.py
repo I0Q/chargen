@@ -3,12 +3,15 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
+import hashlib
+import hmac
 import urllib.error
 import urllib.request
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, RedirectResponse
 
 import uuid
 from datetime import datetime, timezone
@@ -99,11 +102,79 @@ def _db_ensure():
         return
 
 
-app = FastAPI(title="CharGen", version="0.0.2")
+app = FastAPI(title="CharGen", version="0.0.3")
+
+# -------------------- auth (token + passphrase session) --------------------
+# Token (phone-friendly): CHARGEN_TOKEN via ?t=... or Authorization: Bearer ...
+# Passphrase (browser-friendly): PASSPHRASE_SHA256 (hex) with HttpOnly cookie session.
+
+PASSPHRASE_SHA256 = (os.environ.get('PASSPHRASE_SHA256') or '').strip().lower()
+SESSION_TTL_SEC = 24 * 60 * 60
+_sessions: dict[str, float] = {}  # sid -> created_at (unix seconds)
 
 
 def _get_token() -> str | None:
     return os.environ.get("CHARGEN_TOKEN")
+
+
+def _cleanup_sessions() -> None:
+    now = time.time()
+    dead = [sid for sid, t0 in _sessions.items() if (now - t0) > SESSION_TTL_SEC]
+    for sid in dead:
+        _sessions.pop(sid, None)
+
+
+def _is_session_authed(request: Request) -> bool:
+    _cleanup_sessions()
+    sid = request.cookies.get('cg_sid')
+    if not sid:
+        return False
+    t0 = _sessions.get(sid)
+    if not t0:
+        return False
+    if (time.time() - t0) > SESSION_TTL_SEC:
+        _sessions.pop(sid, None)
+        return False
+    return True
+
+
+def _login_html(err: str = '') -> str:
+    err_html = ''
+    if err:
+        esc = (err.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;'))
+        err_html = f'<div style="margin-top:10px; color:#b00020; font-size:14px;">{esc}</div>'
+
+    return f"""<!doctype html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>CharGen — Login</title>
+  <style>
+    body{{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:#fff;}}
+    .header{{padding:16px 14px; border-bottom:1px solid rgba(0,0,0,0.12); font-size:20px; font-weight:700;}}
+    .main{{padding:14px; max-width:520px; margin:0 auto;}}
+    .card{{border:1px solid rgba(0,0,0,0.12); border-radius:14px; padding:16px;}}
+    label{{display:block; font-size:12px; opacity:0.75; margin:0 0 6px;}}
+    input{{width:100%; padding:12px; font-size:16px; box-sizing:border-box; border-radius:10px; border:1px solid rgba(0,0,0,0.15);}}
+    button{{margin-top:12px; width:100%; padding:12px 16px; font-size:16px; border-radius:12px; border:1px solid rgba(0,0,0,0.12); background:#fff;}}
+  </style>
+</head>
+<body>
+  <div class=\"header\">CharGen</div>
+  <div class=\"main\">
+    <div style=\"opacity:0.75; margin-bottom:10px;\">Enter passphrase</div>
+    <div class=\"card\">
+      <form method=\"post\" action=\"/login\">
+        <label for=\"pass\">Passphrase</label>
+        <input id=\"pass\" name=\"passphrase\" type=\"password\" required autofocus />
+        <button type=\"submit\">Unlock</button>
+        {err_html}
+      </form>
+    </div>
+  </div>
+</body>
+</html>"""
 
 
 def _extract_token(request: Request, authorization: str | None) -> str | None:
@@ -115,6 +186,11 @@ def _extract_token(request: Request, authorization: str | None) -> str | None:
     # Fallback: ?t=<token>
     t = request.query_params.get("t")
     return t.strip() if t else None
+
+
+def _wants_html(request: Request) -> bool:
+    accept = (request.headers.get('accept') or '').lower()
+    return 'text/html' in accept or accept == ''
 
 
 def _token_for_links(request: Request) -> str:
@@ -129,21 +205,90 @@ async def token_gate(request: Request, call_next):
     if request.url.path in ("/ping", "/robots.txt"):
         return await call_next(request)
 
-    expected = _get_token()
-    if not expected:
+    # Allow login/logout endpoints for passphrase flow.
+    if request.url.path in ("/login", "/logout"):
+        return await call_next(request)
+
+    expected_token = _get_token()
+    if not expected_token:
         # Fail-closed if not configured.
         return JSONResponse({"error": "CHARGEN_TOKEN not configured"}, status_code=503)
 
+    # Auth path A: bearer/query token
     token = _extract_token(request, request.headers.get("authorization"))
-    if token != expected:
-        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if token == expected_token:
+        return await call_next(request)
 
-    return await call_next(request)
+    # Auth path B: passphrase session cookie (optional)
+    if PASSPHRASE_SHA256 and _is_session_authed(request):
+        return await call_next(request)
+
+    # Not authorized
+    if _wants_html(request):
+        return RedirectResponse(url="/login", status_code=302)
+    return JSONResponse({"error": "unauthorized"}, status_code=401)
 
 
 @app.get("/ping")
 def ping():
     return {"ok": True}
+
+
+@app.get("/login")
+def login_get(request: Request):
+    # If passphrase auth not enabled, show a clear message.
+    if not PASSPHRASE_SHA256 or len(PASSPHRASE_SHA256) != 64:
+        return HTMLResponse("Passphrase auth not enabled on server", status_code=503)
+    if _is_session_authed(request):
+        return RedirectResponse(url="/", status_code=302)
+    return HTMLResponse(_login_html(err=str(request.query_params.get('err') or '')))
+
+
+@app.post("/login")
+async def login_post(request: Request):
+    if not PASSPHRASE_SHA256 or len(PASSPHRASE_SHA256) != 64:
+        return HTMLResponse("Passphrase auth not enabled on server", status_code=503)
+
+    form = await request.form()
+    passphrase = str(form.get('passphrase') or '')
+    digest = hashlib.sha256(passphrase.encode('utf-8')).hexdigest()
+
+    # constant-time compare
+    ok = False
+    try:
+        ok = hmac.compare_digest(digest.lower(), PASSPHRASE_SHA256)
+    except Exception:
+        ok = False
+
+    if not ok:
+        # small delay to slow brute force
+        time.sleep(0.35)
+        return RedirectResponse(url="/login?err=Wrong%20passphrase", status_code=302)
+
+    sid = uuid.uuid4().hex
+    _sessions[sid] = time.time()
+
+    resp = RedirectResponse(url="/", status_code=302)
+    resp.set_cookie(
+        key='cg_sid',
+        value=sid,
+        max_age=SESSION_TTL_SEC,
+        httponly=True,
+        secure=True,
+        samesite='lax',
+        path='/',
+    )
+    return resp
+
+
+@app.get("/logout")
+def logout(request: Request):
+    sid = request.cookies.get('cg_sid')
+    if sid:
+        _sessions.pop(sid, None)
+    resp = RedirectResponse(url="/login", status_code=302)
+    resp.delete_cookie('cg_sid', path='/')
+    return resp
 
 
 @app.post("/api/character/{cid}/regenerate")
