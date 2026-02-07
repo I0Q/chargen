@@ -873,7 +873,7 @@ def index(request: Request):
       <label>Style</label>
       <div class="radios">
         <label class="radio"><input type="radio" name="style" value="Illustrated fantasy" checked data-preview="https://storyforge-assets.sfo3.digitaloceanspaces.com/chargen/placeholders/apple_illustrated.png" /><span class="rtext">Illustrated</span></label>
-        <label class="radio"><input type="radio" name="style" value="Painterly" data-preview="https://storyforge-assets.sfo3.digitaloceanspaces.com/chargen/placeholders/apple_painterly.png" /><span class="rtext">Painterly</span></label>
+        <label class="radio"><input type="radio" name="style" value="Flat vector" data-preview="https://storyforge-assets.sfo3.digitaloceanspaces.com/chargen/placeholders/apple_vector.png" /><span class="rtext">Flat vector</span></label>
         <label class="radio"><input type="radio" name="style" value="Comic / cel shaded" data-preview="https://storyforge-assets.sfo3.digitaloceanspaces.com/chargen/placeholders/apple_comic.png" /><span class="rtext">Comic</span></label>
         <label class="radio"><input type="radio" name="style" value="Photoreal" data-preview="https://storyforge-assets.sfo3.digitaloceanspaces.com/chargen/placeholders/apple_photoreal.png" /><span class="rtext">Photoreal</span></label>
       </div>
