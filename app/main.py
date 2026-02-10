@@ -287,14 +287,13 @@ async def token_gate(request: Request, call_next):
     if token == expected_token:
         return await call_next(request)
 
-    # For service/API usage (e.g. Tinybox), require token and do NOT accept
-    # passphrase cookie for /api/* endpoints.
-    if request.url.path.startswith('/api/'):
-        return JSONResponse({"error": "unauthorized"}, status_code=401)
-
     # Auth path B: passphrase session cookie (web UI)
     if PASSPHRASE_SHA256 and _is_session_authed(request):
         return await call_next(request)
+
+    # For service/API usage (e.g. Tinybox), require token.
+    if request.url.path.startswith('/api/'):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
 
     # Not authorized
     if _wants_html(request):
@@ -1124,6 +1123,8 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 .muted{{opacity:0.7; font-size:13px;}}
 #msg{{margin-top:10px;}}
 
+@keyframes spin{{from{{transform:rotate(0deg);}}to{{transform:rotate(360deg);}}}}
+
 /* Floating save bar */
 .savebar{{position:fixed; left:0; right:0; bottom:0; background:rgba(255,255,255,0.96); border-top:1px solid rgba(0,0,0,0.12); padding:10px 14px;}}
 .savebar .inner{{max-width:520px; margin:0 auto; display:flex; gap:10px; align-items:center;}}
@@ -1144,7 +1145,7 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
         <img id='mainimg' src='{esc(image_url)}' style='display:block; width:100%; border-radius:12px;' />
         <div id='imgOverlay' style='display:none; position:absolute; inset:0; border-radius:12px; background:rgba(0,0,0,0.28); align-items:center; justify-content:center; flex-direction:column; gap:10px; color:#fff;'>
           <div style='width:28px;height:28px;border:3px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%; animation:spin 0.9s linear infinite;'></div>
-          <div style='font-size:14px; opacity:0.95;'>Regenerating…</div>
+          <div id='imgOverlayText' style='font-size:14px; opacity:0.95;'>Working…</div>
         </div>
       </div>
     </a>
@@ -1189,6 +1190,7 @@ const cid = {str(cid)!r};
 const msg = document.getElementById('msg');
 const previewImg = document.getElementById('mainimg');
 const imgOverlay = document.getElementById('imgOverlay');
+const imgOverlayText = document.getElementById('imgOverlayText');
 const dlimg = document.getElementById('dlimg');
 const btnRegen = document.getElementById('regen');
 const btnDel = document.getElementById('del');
@@ -1279,6 +1281,7 @@ btnGen.onclick = async () => {{
 btnRegen.onclick = async () => {{
   btnRegen.disabled = true;
   msg.textContent = 'Regenerating…';
+  if (imgOverlayText) imgOverlayText.textContent = 'Regenerating…';
   if (imgOverlay) imgOverlay.style.display = 'flex';
   try {{
     // Use whatever the user currently has in Traits (source of truth).
@@ -1303,6 +1306,7 @@ btnRegen.onclick = async () => {{
 btnFine.onclick = async () => {{
   btnFine.disabled = true;
   msg.textContent = 'Fine-tuning image…';
+  if (imgOverlayText) imgOverlayText.textContent = 'Fine-tuning…';
   if (imgOverlay) imgOverlay.style.display = 'flex';
   try {{
     const payload = {{
