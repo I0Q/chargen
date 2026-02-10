@@ -1065,7 +1065,14 @@ a{{text-decoration:none; color:inherit;}}
 </style>
 </head>
 <body>
-  <div class='header'><div class='title'>Characters</div><div><a href='/?t={t}'>Generate a new character</a></div></div><div class='main'><div class='grid'>
+  <div class='header'>
+    <div class='title'>Characters</div>
+    <div style='display:flex; gap:12px; align-items:center;'>
+      <a href='/?t={t}'>Generate a new character</a>
+      <a href='/logout' style='opacity:0.75'>Logout</a>
+    </div>
+  </div>
+  <div class='main'><div class='grid'>
     {''.join(cards) if cards else '<div style="opacity:0.7">No renders yet.</div>'}
   </div></div>
 </body></html>"""
@@ -1135,7 +1142,10 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 <body>
     <div class='topbar'>
       <div><b>{esc(name) or 'Character'}</b></div>
-      <div><a href='/characters?t={t}'>Characters</a></div>
+      <div style='display:flex; gap:12px; align-items:center;'>
+        <a href='/characters?t={t}'>Characters</a>
+        <a href='/logout' style='opacity:0.75'>Logout</a>
+      </div>
     </div>
 
   <div class='wrap'>
