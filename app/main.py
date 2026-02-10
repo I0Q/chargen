@@ -641,6 +641,65 @@ async def character_regenerate(cid: str, request: Request):
     return {"ok": True, "image_url": image_url, "thumb_url": thumb_url}
 
 
+@app.post("/api/character/{cid}/fine_tune")
+async def character_fine_tune(cid: str, request: Request):
+    """Fine tune: modify the existing image rather than generating from scratch."""
+    body = await request.json()
+    new_extra = (body.get("extra") or "").strip() or None
+    new_traits = (body.get("traits") or "").strip() or None
+
+    _db_ensure()
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select race, class, mood, background, gender, style, extra, traits, image_url from characters where id=%s",
+                (cid,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="not found")
+            race, clazz, mood, bg, gender, style, old_extra, old_traits, old_image_url = row
+
+    extra = new_extra if new_extra is not None else old_extra
+    traits = new_traits if new_traits is not None else old_traits
+
+    if not traits:
+        traits = _compose_traits(race, clazz, mood, bg, gender, style, extra)
+    if style and ("style:" not in (traits or "").lower()):
+        traits = (traits or "").strip()
+        traits = (traits + (", " if traits else "") + f"Style: {style}")
+
+    # Download existing image and ask Gemini to edit it.
+    img_bytes, mime = _download_image_bytes(old_image_url)
+    instruction = (
+        "Modify the provided image to better match the updated character traits below. "
+        "Keep the same character identity, pose, framing, and overall style. "
+        "Only change what is necessary to reflect the new traits. "
+        "Return a single square (1:1) avatar image. No text, no watermark.\n\n"
+        f"Updated character traits: {traits.strip()}\n"
+    )
+
+    b64 = _gemini_edit_image_b64(instruction=instruction, img_bytes=img_bytes, mime_type=mime)
+    img = base64.b64decode(b64)
+
+    image_url, thumb_url = _upload_png_and_thumb_to_spaces(img)
+
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "update characters set extra=%s, traits=%s, style=%s, image_url=%s, thumb_url=%s where id=%s",
+                (extra, traits, style, image_url, thumb_url, cid),
+            )
+            if cur.rowcount != 1:
+                raise HTTPException(status_code=404, detail="not found")
+        conn.commit()
+
+    # Best-effort cleanup of old image
+    _delete_spaces_object_if_ours(old_image_url)
+
+    return {"ok": True, "image_url": image_url, "thumb_url": thumb_url}
+
+
 @app.post("/api/character/{cid}/delete")
 async def character_delete(cid: str, request: Request):
     _db_ensure()
@@ -802,6 +861,95 @@ def _gemini_generate_image_b64(prompt: str) -> str:
             # Already handled above.
 
     raise HTTPException(status_code=502, detail="gemini did not return image data")
+
+
+def _download_image_bytes(url: str) -> tuple[bytes, str]:
+    """Download an image from a URL. Returns (bytes, mime_type)."""
+    if not url:
+        raise HTTPException(status_code=400, detail='missing image_url')
+    req = urllib.request.Request(url, headers={'User-Agent': 'CharGen/1.0'})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+            ct = (resp.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f'failed to download image: {e}')
+
+    if not ct:
+        u = url.lower()
+        if u.endswith('.png'):
+            ct = 'image/png'
+        elif u.endswith('.jpg') or u.endswith('.jpeg'):
+            ct = 'image/jpeg'
+        else:
+            ct = 'image/png'
+
+    return raw, ct
+
+
+def _gemini_edit_image_b64(*, instruction: str, img_bytes: bytes, mime_type: str) -> str:
+    """Use Gemini image model to edit an existing image with a text instruction."""
+    key = _gemini_key()
+    if not key:
+        raise HTTPException(status_code=503, detail='GEMINI_API_KEY not configured')
+
+    model = _gemini_model()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+    payload: dict[str, Any] = {
+        'contents': [
+            {
+                'parts': [
+                    {'text': instruction},
+                    {'inline_data': {'mime_type': mime_type, 'data': base64.b64encode(img_bytes).decode('utf-8')}},
+                ]
+            }
+        ],
+        'generationConfig': {
+            'responseModalities': ['TEXT', 'IMAGE'],
+        },
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'x-goog-api-key': key,
+            'Content-Type': 'application/json',
+        },
+        method='POST',
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            status = resp.status
+    except urllib.error.HTTPError as e:  # type: ignore[attr-defined]
+        try:
+            raw = e.read()
+            msg = raw.decode('utf-8', 'ignore')
+        except Exception:
+            msg = str(e)
+        raise HTTPException(status_code=e.code, detail=msg)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f'gemini request failed: {e}')
+
+    if status >= 400:
+        raise HTTPException(status_code=502, detail=f'gemini unexpected status {status}')
+
+    data = json.loads(raw)
+    candidates = data.get('candidates') or []
+    for cand in candidates:
+        content = (cand or {}).get('content') or {}
+        parts = content.get('parts') or []
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            inline = part.get('inlineData') or part.get('inline_data')
+            if isinstance(inline, dict) and inline.get('data'):
+                return inline['data']
+
+    raise HTTPException(status_code=502, detail='gemini did not return image data')
 
 
 @app.post("/generate")
@@ -1007,7 +1155,7 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
     </div>
 
     <div style='display:flex; gap:10px; margin-top:10px;'>
-      <button id='regen' type='button' style='flex:1; margin-top:0;'>🔁 Regenerate image</button>
+      <button id='regen' type='button' style='flex:1; margin-top:0;'>🔁 Regenerate character</button>
       <button id='del' type='button' style='flex:1; margin-top:0; border:1px solid rgba(180,0,0,0.35);'>🗑 Delete</button>
     </div>
 
@@ -1023,6 +1171,8 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
 
     <label>Traits string (affects image generation)</label>
     <textarea id='traits'>{esc(traits)}</textarea>
+
+    <button id='finetune' type='button' style='margin-top:10px;'>🎛 Fine tune</button>
 
     <div id='msg' class='muted'></div>
   </div>
@@ -1075,6 +1225,7 @@ document.getElementById('dldetails').onclick = () => {{
 
 const btnSave = document.getElementById('save');
 const btnGen = document.getElementById('genquote');
+const btnFine = document.getElementById('finetune');
 
 async function postJson(url, payload) {{
   const resp = await fetch(url, {{
@@ -1127,7 +1278,7 @@ btnGen.onclick = async () => {{
 
 btnRegen.onclick = async () => {{
   btnRegen.disabled = true;
-  msg.textContent = 'Regenerating image…';
+  msg.textContent = 'Regenerating character…';
   if (imgOverlay) imgOverlay.style.display = 'flex';
   try {{
     // Use whatever the user currently has in Traits (source of truth).
@@ -1140,12 +1291,35 @@ btnRegen.onclick = async () => {{
       previewImg.src = out.image_url;
       dlimg.href = out.image_url;
     }}
-    msg.textContent = 'Image regenerated.';
+    msg.textContent = 'Character regenerated.';
   }} catch (e) {{
     msg.textContent = 'Error: ' + String(e);
   }} finally {{
     if (imgOverlay) imgOverlay.style.display = 'none';
     btnRegen.disabled = false;
+  }}
+}};
+
+btnFine.onclick = async () => {{
+  btnFine.disabled = true;
+  msg.textContent = 'Fine-tuning image…';
+  if (imgOverlay) imgOverlay.style.display = 'flex';
+  try {{
+    const payload = {{
+      extra: document.getElementById('extra').value,
+      traits: document.getElementById('traits').value,
+    }};
+    const out = await postJson(`/api/character/${{cid}}/fine_tune?t=${{encodeURIComponent(token)}}`, payload);
+    if (out && out.image_url) {{
+      previewImg.src = out.image_url;
+      dlimg.href = out.image_url;
+    }}
+    msg.textContent = 'Fine tune complete.';
+  }} catch (e) {{
+    msg.textContent = 'Error: ' + String(e);
+  }} finally {{
+    if (imgOverlay) imgOverlay.style.display = 'none';
+    btnFine.disabled = false;
   }}
 }};
 
