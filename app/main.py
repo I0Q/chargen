@@ -264,6 +264,11 @@ def _token_for_links(request: Request) -> str:
 @app.middleware("http")
 async def token_gate(request: Request, call_next):
 
+    # EMERGENCY BYPASS (default off): set CHARGEN_DISABLE_AUTH=1 to disable all auth.
+    # Use only temporarily; restore by unsetting the env var.
+    if (os.environ.get('CHARGEN_DISABLE_AUTH') or '').strip() == '1':
+        return await call_next(request)
+
     # Always allow health.
     if request.url.path in ("/ping", "/robots.txt"):
         return await call_next(request)
