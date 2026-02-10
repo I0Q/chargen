@@ -310,6 +310,42 @@ def ping():
     return {"ok": True}
 
 
+@app.post('/api/session')
+def api_issue_session(request: Request):
+    """Token-gated session bootstrap (mints cg_sid cookie).
+
+    Purpose: allow trusted automation (e.g. StoryForge) to obtain a valid web-session
+    cookie without typing the passphrase.
+
+    Auth: CHARGEN_TOKEN in header x-chargen-token (or Authorization: Bearer ...).
+    """
+    if not PASSPHRASE_SHA256 or len(PASSPHRASE_SHA256) != 64:
+        return JSONResponse({"ok": False, "error": "auth_disabled"}, status_code=503)
+
+    expected = _get_token() or ''
+    got = (request.headers.get('x-chargen-token') or '').strip()
+    if not got:
+        got = _extract_token(request, request.headers.get('authorization')) or ''
+
+    if not expected or not got or not hmac.compare_digest(got, expected):
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+
+    ts = int(time.time())
+    sid = _sign_session(ts)
+    resp = JSONResponse({"ok": True})
+    resp.headers['Cache-Control'] = 'no-store'
+    resp.set_cookie(
+        key='cg_sid',
+        value=sid,
+        max_age=SESSION_TTL_SEC,
+        httponly=True,
+        secure=True,
+        samesite='lax',
+        path='/',
+    )
+    return resp
+
+
 @app.get("/api/whoami")
 def whoami(request: Request):
     """Debug helper: tells which auth path was used (token vs passphrase cookie)."""
