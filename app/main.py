@@ -1155,7 +1155,7 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
     </div>
 
     <div style='display:flex; gap:10px; margin-top:10px;'>
-      <button id='regen' type='button' style='flex:1; margin-top:0;'>🔁 Regenerate character</button>
+      <button id='regen' type='button' style='flex:1; margin-top:0;'>🔁 Regenerate</button>
       <button id='del' type='button' style='flex:1; margin-top:0; border:1px solid rgba(180,0,0,0.35);'>🗑 Delete</button>
     </div>
 
@@ -1172,7 +1172,7 @@ button{{padding:12px 16px; font-size:16px; margin-top:12px; width:100%;}}
     <label>Traits string (affects image generation)</label>
     <textarea id='traits'>{esc(traits)}</textarea>
 
-    <button id='finetune' type='button' style='margin-top:10px;'>🎛 Fine tune</button>
+    <button id='finetune' type='button' style='margin-top:10px; margin-bottom:22px;'>🎛 Fine tune</button>
 
     <div id='msg' class='muted'></div>
   </div>
@@ -1278,7 +1278,7 @@ btnGen.onclick = async () => {{
 
 btnRegen.onclick = async () => {{
   btnRegen.disabled = true;
-  msg.textContent = 'Regenerating character…';
+  msg.textContent = 'Regenerating…';
   if (imgOverlay) imgOverlay.style.display = 'flex';
   try {{
     // Use whatever the user currently has in Traits (source of truth).
@@ -1291,7 +1291,7 @@ btnRegen.onclick = async () => {{
       previewImg.src = out.image_url;
       dlimg.href = out.image_url;
     }}
-    msg.textContent = 'Character regenerated.';
+    msg.textContent = 'Regenerated.';
   }} catch (e) {{
     msg.textContent = 'Error: ' + String(e);
   }} finally {{
